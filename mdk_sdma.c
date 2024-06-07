@@ -36,6 +36,11 @@
 #define sdma_dbg(fmt, args...)
 #endif
 
+#define sdma_wmb() __asm volatile("dsb st" ::: "memory")
+#define sdma_rmb() __asm volatile("dsb ld" ::: "memory")
+#define sdma_smp_wmb() __asm volatile("dmb ishst" ::: "memory")
+#define sdma_smp_rmb() __asm volatile("dmb ishld" ::: "memory")
+
 typedef struct sdma_handle {
 	int fd;
 	int chn;
@@ -190,6 +195,43 @@ struct sdma_ioctl_funcs g_sdma_ioctl_list[] = {
 	{SDMA_CLR_ERR_CNT, sdma_clr_err_sqe_cnt_ioctl},
 };
 
+static int cqe_err_code(uint32_t status)
+{
+	return CQE_ERR_CODE_BASE - (int)status;
+}
+
+static int sdma_cqe_check(sdma_handle_t *pchan, uint16_t sq_id, uint16_t cq_tail)
+{
+	sdma_cq_entry_t *cq_entry = NULL;
+	int ret = 0;
+
+	cq_entry = pchan->cqe + cq_tail;
+	if (cq_entry->status != 0) {
+		sdma_err("cq_entry invalid, status: %u\n", cq_entry->status);
+		ret = cqe_err_code(cq_entry->status);
+		pchan->sync_info->cqe_err[cq_tail] = ret;
+		__sync_fetch_and_add(&pchan->sync_info->err_cnt, 1);
+	}
+	if (sq_id != cq_entry->sqe_id) {
+		sdma_err("sqe_id error, cq_head = %hu, sqe_id = %u\n", sq_id, cq_entry->sqe_id);
+		ret = SDMA_CQE_ID_WRONG;
+		pchan->sync_info->cqe_err[cq_tail] = ret;
+		__sync_fetch_and_add(&pchan->sync_info->err_cnt, 1);
+	}
+	pchan->sync_info->round_cnt[cq_tail]++;
+
+	return ret;
+}
+
+static uint32_t sdma_task_num(uint32_t head, uint32_t tail, uint32_t len)
+{
+	if (head > tail) {
+		return (tail + HISI_SDMA_SQ_LEN - head) & (len - 1);
+	}
+
+	return (tail - head) & (len - 1);
+}
+
 static uint32_t sdma_channel_get_finish_count(sdma_handle_t *pchan)
 {
 	uint32_t head, head_before;
@@ -226,6 +268,68 @@ static void sdma_unlock_chn(volatile int *lock, uint32_t *lock_pid)
 	*lock_pid = 0;
 }
 
+static void update_hw_sw_ptr(sdma_handle_t *pchan, uint16_t sq_head, uint16_t cq_tail)
+{
+	pchan->sync_info->sq_head = sq_head;
+	pchan->sync_info->cq_tail = cq_tail;
+
+	pchan->sync_info->cq_head = cq_tail;
+	/* Updata HW CQ HEAD */
+	(void)pchan->funcs[SDMA_CQ_HEAD_WRITE].reg_func(pchan, pchan->sync_info->cq_head);
+}
+
+static int sdma_task_check(sdma_handle_t *pchan, uint32_t task_num)
+{
+	sdma_cq_entry_t *cq_entry = NULL;
+	uint32_t cq_vld, num = task_num;
+	uint16_t cq_tail, sq_id;
+	int ret = SDMA_SUCCESS;
+	int tmp, i = 0;
+
+	if (num == 0) 
+		return ret;
+
+	sq_id = pchan->sync_info->sq_head;
+	cq_tail = pchan->sync_info->cq_tail;
+	cq_vld = pchan->sync_info->cq_vld;
+
+	while (i++ < HISI_SDMA_CQE_TIMEOUT && num > 0) {
+		cq_entry = pchan->cqe + cq_tail;
+		/* check whether the cqe is valid */
+		if (cq_vld != cq_entry->vld)
+			continue;
+		/* ensure the order of cqe */
+		sdma_rmb();
+		tmp = sdma_cqe_check(pchan, sq_id, cq_tail);
+		if (tmp < 0)
+			ret = tmp;
+
+		sq_id++;
+		cq_tail++;
+		if (cq_tail == 0) {
+			pchan->sync_info->cq_vld ^= 1;
+			cq_vld ^= 1;
+		}
+		num--;
+	}
+
+	if (i > HISI_SDMA_CQE_TIMEOUT) {
+		if (pchan->sync_info->sq_tail !=
+			(uint16_t)pchan->funcs[SDMA_SQ_TAIL_READ].reg_func(pchan, 0)) {
+			return SDMA_INVALID_DOORBELL;
+		}
+		if (pchan->sync_info->sq_tail ==
+			(uint16_t)pchan->funcs[SDMA_SQ_HEAD_READ].reg_func(pchan, 0)) {
+			return SDMA_CQE_MEM_RSVD;
+		}
+		sdma_err("timeout CQEs id = %u, num = %u\n", cq_tail, num);
+		ret = SDMA_TASK_TIMEOUT;
+	}
+	update_hw_sw_ptr(pchan, sq_id, cq_tail);
+
+	return ret;
+}
+
 int sdma_check_handle(void *phandle)
 {
 	sdma_handle_t *pchan;
@@ -242,6 +346,27 @@ int sdma_check_handle(void *phandle)
 	}
 
 	return SDMA_SUCCESS;
+}
+
+int sdma_wait_chn(void *phandle, uint32_t count)
+{
+	sdma_handle_t *pchan;
+	uint32_t num;
+	int ret;
+
+	ret = sdma_check_handle(phandle);
+	if (ret != 0) {
+		return ret;
+	}
+
+	pchan = (sdma_handle_t *)phandle;
+	num = sdma_task_num(pchan->sync_info->sq_head, pchan->sync_info->sq_tail,
+			    HISI_SDMA_SQ_LEN);
+	if (num < count) {
+		return SDMA_WAIT_NUM_OVERFLOW;
+	}
+
+	return sdma_task_check(pchan, count);
 }
 
 int sdma_query_chn(void *phandle, uint32_t count)
@@ -341,6 +466,46 @@ static int sdma_request_check(sdma_handle_t *pchan, sdma_request_t *request)
 	}
 
 	return cqe_status(pchan, req_id, req_cnt);
+}
+
+int sdma_iwait_chn(void *phandle, sdma_request_t *request)
+{
+	sdma_handle_t *pchan;
+	uint32_t num;
+	int ret;
+
+	ret = sdma_check_handle(phandle);
+	if (ret != 0) {
+		return ret;
+	}
+
+	if (!request) {
+		sdma_err("sdma request is NULL!\n");
+		return SDMA_NULL_POINTER;
+	}
+
+	pchan = (sdma_handle_t *)phandle;
+	if (request->req_cnt == 0) {
+		return SDMA_SUCCESS;
+	}
+
+	ret = sdma_lock_chn(&pchan->sync_info->lock, &pchan->sync_info->lock_pid);
+	if (ret != 0) {
+		return ret;
+	}
+
+	num = sdma_task_num(pchan->sync_info->sq_head, pchan->sync_info->sq_tail,
+			    HISI_SDMA_SQ_LEN);
+	if (num > 0) {
+		ret = sdma_task_check(pchan, num);
+		if (ret == SDMA_INVALID_DOORBELL || ret == SDMA_CQE_MEM_RSVD) {
+			sdma_unlock_chn(&pchan->sync_info->lock, &pchan->sync_info->lock_pid);
+			return ret;
+		}
+	}
+	sdma_unlock_chn(&pchan->sync_info->lock, &pchan->sync_info->lock_pid);
+
+	return sdma_request_check(pchan, request);
 }
 
 int sdma_iquery_chn(void *phandle, sdma_request_t *request)
@@ -721,6 +886,72 @@ int sdma_copy_data(void *phandle, sdma_sqe_task_t *sdma_sqe, uint32_t count)
 		return SDMA_FAILED;
 	}
 
+	pthread_spin_unlock(&pchan->q_data.task_lock);
+
+	return SDMA_SUCCESS;
+}
+
+static void sdma_exec_callback_func(sdma_handle_t *pchan, uint32_t sqe_id, int sqe_status)
+{
+	sdma_task_callback task_cb;
+	void *task_data;
+
+	task_cb = pchan->q_data.task_cb[sqe_id];
+	if (task_cb) {
+		task_data = pchan->q_data.task_data[sqe_id];
+		task_cb(sqe_status, task_data);
+	} else {
+		sdma_dbg("chn%d task callback function is NULL, sqe_id = %u, status = %d\n",
+			pchan->chn, sqe_id, sqe_status);
+	}
+}
+
+int sdma_progress(void *phandle)
+{
+	uint32_t sq_head, cq_head, cq_vld, sqe_id, flag = 0, num = 0, i = 0;
+	sdma_cq_entry_t *cq_entry;
+	sdma_handle_t *pchan;
+	int sqe_status, ret;
+
+	ret = sdma_check_handle(phandle);
+	if (ret != 0)
+		return ret;
+	pchan = (sdma_handle_t *)phandle;
+	ret = pthread_spin_lock(&pchan->q_data.task_lock);
+	if (ret != 0) {
+		sdma_err("sdma failed to get lock\n");
+		return ret;
+	}
+
+	sq_head = pchan->sync_info->sq_head;
+	cq_head = pchan->sync_info->cq_head;
+	cq_vld = pchan->sync_info->cq_vld;
+	num = sdma_task_num(pchan->sync_info->sq_head, pchan->sync_info->sq_tail, HISI_SDMA_SQ_LEN);
+	while (i++ < HISI_SDMA_CQE_TIMEOUT && num > 0) {
+		cq_entry = pchan->cqe + cq_head;
+		if (cq_vld != cq_entry->vld)
+			continue;
+		sdma_rmb();
+		flag = 1;
+		sqe_id = cq_entry->sqe_id;
+		sqe_status = cq_entry->status ? cqe_err_code(cq_entry->status) : 0;
+		sdma_exec_callback_func(pchan, sqe_id, sqe_status);
+		sq_head++;
+		sq_head = (sq_head >= HISI_SDMA_SQ_LEN) ? 0 : sq_head;
+		cq_head++;
+		if (cq_head >= HISI_SDMA_CQ_LEN) {
+			cq_head = 0;
+			cq_vld ^= 1;
+		}
+		num--;
+	}
+
+	if (flag) {
+		pchan->sync_info->sq_head = sq_head;
+		pchan->sync_info->cq_head = cq_head;
+		pchan->sync_info->cq_vld = cq_vld;
+		(void)pchan->funcs[SDMA_CQ_HEAD_WRITE].reg_func(pchan, pchan->sync_info->cq_head);
+	}
 	pthread_spin_unlock(&pchan->q_data.task_lock);
 
 	return SDMA_SUCCESS;
