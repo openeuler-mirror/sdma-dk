@@ -577,19 +577,16 @@ static int sdma_mmap(uint32_t chn_num, sdma_handle_t *phandle, size_t cqe_size, 
 	ptr = mmap(NULL, sync_size, PROT_READ | PROT_WRITE, MAP_SHARED, phandle->fd, offset);
 	if (ptr == MAP_FAILED) {
 		sdma_err("mmap sync info failed\n");
-		goto unmap_io;
+		goto unmap_cqe;
 	}
 	phandle->sync_info = (struct hisi_sdma_queue_info *)ptr;
 
 	return SDMA_SUCCESS;
 
-unmap_io:
-	if (phandle->io_align_base) {
-		munmap(phandle->io_align_base, g_page_size);
-	}
 unmap_cqe:
 	if (phandle->cqe) {
 		munmap(phandle->cqe, cqe_size);
+		phandle->cqe = NULL;
 	}
 
 	return SDMA_FAILED;
@@ -608,12 +605,12 @@ static void sdma_munmap_chn(sdma_handle_t *phandle)
 
 	if (phandle->cqe) {
 		munmap(phandle->cqe, cqe_size);
+		phandle->cqe = NULL;
 	}
-	if (phandle->io_align_base) {
-		munmap(phandle->io_align_base, g_page_size);
-	}
+
 	if (phandle->sync_info) {
 		munmap(phandle->sync_info, sync_size);
+		phandle->sync_info = NULL;
 	}
 }
 
@@ -983,7 +980,7 @@ int sdma_icopy_data(void *phandle, sdma_sqe_task_t *sdma_sqe, uint32_t count,
 		    sdma_request_t *request)
 {
 	sdma_handle_t *pchan = NULL;
-	uint16_t req_id, sq_tail;
+	uint16_t req_id;
 	int ret;
 
 	ret = icopy_check_input(phandle, sdma_sqe, count, request);
@@ -1003,7 +1000,6 @@ int sdma_icopy_data(void *phandle, sdma_sqe_task_t *sdma_sqe, uint32_t count,
 		return ret;
 	}
 	req_id = pchan->sync_info->sq_tail;
-	sq_tail = pchan->sync_info->sq_tail;
 	request->req_id = req_id;
 	request->req_cnt = count;
 	request->round_cnt = pchan->sync_info->round_cnt[req_id];
