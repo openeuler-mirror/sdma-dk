@@ -47,6 +47,20 @@ typedef struct sdma_request {
 	uint32_t	round_cnt;
 } sdma_request_t;
 
+typedef struct mpam_cfg {
+	uint32_t mpam_partid : 8; /* partid for MPAM bandwidth control */
+	uint32_t pmg : 2; /* pmg for MPAM bandwidth control */
+	uint32_t qos : 4; /* qos level for MPAM bandwidth control */
+	uint32_t replace_en : 1; /* 1: enable MPAM bandwith control; 0: disable */
+	uint32_t rsv : 17;
+} mpam_cfg_t;
+
+typedef struct sdma_chn_err {
+	uint32_t ch_err_status;
+	uint32_t ch_cqe_sqeid;
+	uint32_t ch_cqe_status;
+} sdma_chn_err_t;
+
 typedef enum {
 	SDMA_SUCCESS		= 0,
 	SDMA_FAILED		= -1,
@@ -111,8 +125,8 @@ int sdma_deinit_chn(void *phandle);
  函 数 名  : sdma_copy_data
  功能描述  : sdma拷贝数据
  输入参数  : phandle--sdma句柄
-	    sdma_sqe--sqe数据指针
-	    count--sqe的数量
+			sdma_sqe--sqe数据指针
+			count--sqe的数量
  输出参数  : 无
  返 回 值  : 0--成功 其他--错误码
 ****************************************************************************/
@@ -122,19 +136,19 @@ int sdma_copy_data(void *phandle, sdma_sqe_task_t *sdma_sqe, uint32_t count);
  函 数 名  : sdma_icopy_data
  功能描述  : sdma拷贝数据
  输入参数  : phandle--sdma句柄
-	    sdma_sqe--sqe数据指针
-	    count--sqe的数量
+			sdma_sqe--sqe数据指针
+			count--sqe的数量
  输出参数  : request--sdma发送命令相关信息指针
  返 回 值  : 0--成功 其他--错误码
 ****************************************************************************/
 int sdma_icopy_data(void *phandle, sdma_sqe_task_t *sdma_sqe,
-uint32_t count, sdma_request_t *request);
+		    uint32_t count, sdma_request_t *request);
 
 /*****************************************************************************
  函 数 名  : sdma_wait_chn
  功能描述  : 等待sdma通道发送完成
  输入参数  : phandle--sdma句柄
-	    count--接收的cqe数量
+			count--接收的cqe数量
  输出参数  : 无
  返 回 值  : 0--成功 其他--错误码
 ****************************************************************************/
@@ -144,7 +158,7 @@ int sdma_wait_chn(void *phandle, uint32_t count);
  函 数 名  : sdma_iwait_chn
  功能描述  : 等待sdma通道发送完成
  输入参数  : phandle--sdma句柄
-	    request--sdma发送命令相关信息指针
+			request--sdma发送命令相关信息指针
  输出参数  : 无
  返 回 值  : 0--成功 其他--错误码
 ****************************************************************************/
@@ -160,15 +174,6 @@ int sdma_iwait_chn(void *phandle, sdma_request_t *request);
 int sdma_progress(void *phandle);
 
 /*****************************************************************************
- 函 数 名  : sdma_free_chn
- 功能描述  : 释放通道
- 输入参数  : phandle sdma句柄
- 输出参数  : 无
- 返 回 值  : 0--成功 其他--错误码
-****************************************************************************/
-int sdma_free_chn(void *phandle);
-
-/*****************************************************************************
  函 数 名  : sdma_get_process_id
  功能描述  : 获取进程相关id信息
  输入参数  : fd sdma设备的文件描述符
@@ -176,6 +181,15 @@ int sdma_free_chn(void *phandle);
  返 回 值  : 0--成功 其他--错误码
 ****************************************************************************/
 int sdma_get_process_id(int fd, uint32_t *id);
+
+/*****************************************************************************
+ 函 数 名  : sdma_free_chn
+ 功能描述  : 释放通道
+ 输入参数  : phandle sdma句柄
+ 输出参数  : 无
+ 返 回 值  : 0--成功 其他--错误码
+****************************************************************************/
+int sdma_free_chn(void *phandle);
 
 /*****************************************************************************
  函 数 名  : sdma_query_sqe_num
@@ -199,7 +213,7 @@ int sdma_query_chn(void *phandle, uint32_t count);
  函 数 名  : sdma_query_chn
  功能描述  : 查询sdma通道是否已完成count个sqe任务
  输入参数  : phandle--sdma句柄
-	    request--sdma发送命令相关信息指针
+			request--sdma发送命令相关信息指针
  输出参数  : 无
  返 回 值  : 0--成功 其他--错误码
 ****************************************************************************/
@@ -222,6 +236,71 @@ int sdma_devices_num(int fd);
  返 回 值  : -1--未找到 其他--sdma设备id
 ****************************************************************************/
 int sdma_nearest_id(void);
+
+/*****************************************************************************
+ 函 数 名  : sdma_finish_sqe_cnt
+ 功能描述  : 查询/清除sdma完成sqe计数器
+ 输入参数  : phandle--sdma句柄
+			clr--计数器清零标识 1有效
+ 输出参数  : 无
+ 返 回 值  : SDMA_NULL_POINTER--失败 其他--完成sqe数量
+****************************************************************************/
+int sdma_finish_sqe_cnt(void *phandle, bool clr);
+
+/*****************************************************************************
+ 函 数 名  : sdma_err_sqe_cnt
+ 功能描述  : 查询/清除sdma异常sqe计数器
+ 输入参数  : phandle--sdma句柄
+			clr--计数器清零标识 1有效
+ 输出参数  : 无
+ 返 回 值  : SDMA_NULL_POINTER--失败 其他--完成sqe数量
+****************************************************************************/
+int sdma_err_sqe_cnt(void *phandle, bool clr);
+
+/*****************************************************************************
+ 函 数 名  : sdma_pin_umem
+ 功能描述  : 为用户进程虚拟地址PIN页表
+ 输入参数  : fd--sdma文件句柄 vma--虚拟地址 size--PIN内存大小
+ 输出参数  : cookie--用于标识pin过的内存，用于之后unpin内存
+ 返 回 值  : 0--成功 其他--错误码
+****************************************************************************/
+int sdma_pin_umem(int fd, void *vma, uint32_t size, uint64_t *cookie);
+
+/*****************************************************************************
+ 函 数 名  : sdma_unpin_umem
+ 功能描述  : 为用户进程虚拟地址UNPIN页表
+ 输入参数  : fd--sdma文件句柄 cookie--unpin指定内存的密钥
+ 输出参数  : 无
+ 返 回 值  : 0--成功 其他--错误码
+****************************************************************************/
+int sdma_unpin_umem(int fd, uint64_t cookie);
+
+/*****************************************************************************
+ 函 数 名  : sdma_mpamid_cfg
+ 功能描述  : 配置SDMA MPAMID全局替换寄存器
+ 输入参数  : fd--sdma文件句柄 mpam_cfg--mpam配置结构体
+ 输出参数  : 无
+ 返 回 值  : 0--成功 其他--错误码
+****************************************************************************/
+int sdma_mpamid_cfg(int fd, mpam_cfg_t *mpam_cfg);
+
+/*****************************************************************************
+ 函 数 名  : sdma_chn_err_info
+ 功能描述  : 查询SDMA通道异常信息
+ 输入参数  : phandle--sdma句柄
+ 输出参数  : chn_err--通道错误信息结构体
+ 返 回 值  : 0--成功 其他--错误码
+****************************************************************************/
+int sdma_chn_err_info(void *phandle, sdma_chn_err_t *chn_err);
+
+/*****************************************************************************
+ 函 数 名  : sdma_add_authority
+ 功能描述  : 保存pid信息
+ 输入参数  : id_list--信任的pid列表 num--信任的pid数量
+ 输出参数  : 无
+ 返 回 值  : 0--成功 其他--错误码
+****************************************************************************/
+int sdma_add_authority(int fd, int *id_list, int num);
 
 #ifdef __cplusplus
 }

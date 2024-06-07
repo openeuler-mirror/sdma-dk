@@ -1173,3 +1173,157 @@ int sdma_nearest_id(void)
 
 	return id;
 }
+
+int sdma_finish_sqe_cnt(void *phandle, bool clr)
+{
+	uint32_t normal_sqe_cnt;
+	sdma_handle_t *pchan;
+	uint32_t dfx_reg;
+	int ret;
+
+	ret = sdma_check_handle(phandle);
+	if (ret != 0) {
+		return ret;
+	}
+	pchan = (sdma_handle_t *)phandle;
+
+	dfx_reg = pchan->funcs[SDMA_DFX_REG_READ].reg_func(pchan, 0);
+	normal_sqe_cnt = dfx_reg >> NORMAL_SQE_SHIFT;
+
+	if (clr) {
+		(void)pchan->funcs[SDMA_CLR_NORM_CNT].reg_func(pchan, 0);
+	}
+
+	return (int)normal_sqe_cnt;
+}
+
+int sdma_err_sqe_cnt(void *phandle, bool clr)
+{
+	uint32_t err_sqe_cnt;
+	sdma_handle_t *pchan;
+	uint32_t dfx_reg;
+	int ret;
+
+	ret = sdma_check_handle(phandle);
+	if (ret != 0) {
+		return ret;
+	}
+	pchan = (sdma_handle_t *)phandle;
+
+	dfx_reg = pchan->funcs[SDMA_DFX_REG_READ].reg_func(pchan, 0);
+	err_sqe_cnt = dfx_reg & ERR_SQE_MASK;
+
+	if (clr) {
+		(void)pchan->funcs[SDMA_CLR_ERR_CNT].reg_func(pchan, 0);
+	}
+
+	return (int)err_sqe_cnt;
+}
+
+int sdma_pin_umem(int fd, void *vma, uint32_t size, uint64_t *cookie)
+{
+	struct hisi_sdma_umem_info umem_info;
+	int ret;
+
+	if (!vma) {
+		sdma_err("sdma vma is NULL!\n");
+		return SDMA_NULL_POINTER;
+	}
+
+	if (!cookie) {
+		sdma_err("sdma cookie is NULL!\n");
+		return SDMA_NULL_POINTER;
+	}
+
+	umem_info.vma = (uintptr_t)vma;
+	umem_info.size = size;
+	ret = ioctl(fd, IOCTL_SDMA_PIN_UMEM, &umem_info);
+	if (ret != 0) {
+		sdma_err("IOCTL_SDMA_PIN_UMEM fail,%s!\n", strerror(errno));
+		return SDMA_FAILED;
+	}
+	*cookie = umem_info.cookie;
+	sdma_dbg("pin get cookie = %llx\n", *cookie);
+
+	return SDMA_SUCCESS;
+}
+
+int sdma_unpin_umem(int fd, uint64_t cookie)
+{
+	uint64_t ck = cookie;
+	int ret;
+
+	sdma_dbg("unpin cookie = %llx\n", ck);
+	ret = ioctl(fd, IOCTL_SDMA_UNPIN_UMEM, &ck);
+	if (ret != 0) {
+		sdma_err("IOCTL_SDMA_UNPIN_UMEM fail,%s!\n", strerror(errno));
+		return SDMA_FAILED;
+	}
+
+	return SDMA_SUCCESS;
+}
+
+int sdma_mpamid_cfg(int fd, mpam_cfg_t *mpam_cfg)
+{
+	struct hisi_sdma_mpamcfg cfg = {0};
+	int ret;
+
+	if (!mpam_cfg) {
+		sdma_err("sdma mpam_cfg is NULL!\n");
+		return SDMA_NULL_POINTER;
+	}
+	cfg.partid = mpam_cfg->mpam_partid;
+	cfg.pmg = mpam_cfg->pmg;
+	cfg.qos = mpam_cfg->qos;
+	cfg.mpamid_replace_en = mpam_cfg->replace_en;
+
+	ret = ioctl(fd, IOCTL_SDMA_MPAMID_CFG, &cfg);
+	if (ret != 0) {
+		sdma_err("IOCTL_SDMA_MPAMID_CFG fail, %s!\n", strerror(errno));
+		return SDMA_FAILED;
+	}
+
+	return SDMA_SUCCESS;
+}
+
+int sdma_chn_err_info(void *phandle, sdma_chn_err_t *chn_err)
+{
+	sdma_handle_t *pchan;
+	int ret;
+
+	ret = sdma_check_handle(phandle);
+	if (ret != 0) {
+		return ret;
+	}
+	if (!chn_err) {
+		sdma_err("sdma chn_err is NULL!\n");
+		return SDMA_NULL_POINTER;
+	}
+
+	pchan = (sdma_handle_t *)phandle;
+	chn_err->ch_err_status = pchan->sync_info->ioe.ch_err_status;
+	chn_err->ch_cqe_sqeid = pchan->sync_info->ioe.ch_cqe_sqeid;
+	chn_err->ch_cqe_status = pchan->sync_info->ioe.ch_cqe_status;
+
+	return SDMA_SUCCESS;
+}
+
+int sdma_add_authority(int fd, int *id_list, int num)
+{
+	struct hisi_sdma_pid_info info;
+	int ret;
+
+	if (!id_list) {
+		sdma_err("sdma id_list is NULL!\n");
+		return SDMA_NULL_POINTER;
+	}
+	info.num = num;
+	info.pid_list_addr = (uintptr_t)(void *)id_list;
+	ret = ioctl(fd, IOCTL_SDMA_ADD_AUTH_HT, &info);
+	if (ret != 0) {
+		sdma_err("IOCTL_SDMA_ADD_OWNER fail, %s!\n", strerror(errno));
+		return SDMA_FAILED;
+	}
+
+	return SDMA_SUCCESS;
+}
