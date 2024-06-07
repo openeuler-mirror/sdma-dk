@@ -21,6 +21,32 @@ extern "C" {
 
 typedef void (*sdma_task_callback)(int task_status, void *task_data);
 
+typedef struct sdma_sqe_task {
+	uint64_t src_addr; /* source address of copy */
+	uint64_t dst_addr; /* destination address of copy */
+	uint32_t src_process_id; /* pasid/pid of source process */
+	uint32_t dst_process_id; /* pasid/pid of destination process */
+	uint32_t src_stride_len; /* stride length of source address */
+	uint32_t dst_stride_len; /* stride length of destination address */
+	uint32_t stride_num; /* 0 when not using stride mode */
+	uint32_t length; /* data length */
+	uint8_t  opcode; /* 0x0：normal; 0x5：memory set; 0x6: HBM cache preload */
+	uint8_t  mpam_partid; /* partid for MPAM bandwidth control */
+	uint8_t  pmg : 2; /* pmg for MPAM bandwidth control */
+	uint8_t  resvd1 : 6;
+	uint8_t  qos : 4; /* qos level for MPAM bandwidth control */
+	uint8_t  resvd2 : 4;
+	sdma_task_callback task_cb; /* callback function for progress */
+	void *task_data; /* parameter of callback function */
+	struct sdma_sqe_task *next_sqe; /* support list structure */
+} sdma_sqe_task_t;
+
+typedef struct sdma_request {
+	uint16_t	req_id;
+	uint32_t	req_cnt;
+	uint32_t	round_cnt;
+} sdma_request_t;
+
 typedef enum {
 	SDMA_SUCCESS		= 0,
 	SDMA_FAILED		= -1,
@@ -82,6 +108,29 @@ void *sdma_init_chn(int fd, int chn);
 int sdma_deinit_chn(void *phandle);
 
 /*****************************************************************************
+ 函 数 名  : sdma_copy_data
+ 功能描述  : sdma拷贝数据
+ 输入参数  : phandle--sdma句柄
+	    sdma_sqe--sqe数据指针
+	    count--sqe的数量
+ 输出参数  : 无
+ 返 回 值  : 0--成功 其他--错误码
+****************************************************************************/
+int sdma_copy_data(void *phandle, sdma_sqe_task_t *sdma_sqe, uint32_t count);
+
+/*****************************************************************************
+ 函 数 名  : sdma_icopy_data
+ 功能描述  : sdma拷贝数据
+ 输入参数  : phandle--sdma句柄
+	    sdma_sqe--sqe数据指针
+	    count--sqe的数量
+ 输出参数  : request--sdma发送命令相关信息指针
+ 返 回 值  : 0--成功 其他--错误码
+****************************************************************************/
+int sdma_icopy_data(void *phandle, sdma_sqe_task_t *sdma_sqe,
+		     uint32_t count, sdma_request_t *request);
+
+/*****************************************************************************
  函 数 名  : sdma_free_chn
  功能描述  : 释放通道
  输入参数  : phandle sdma句柄
@@ -89,6 +138,15 @@ int sdma_deinit_chn(void *phandle);
  返 回 值  : 0--成功 其他--错误码
 ****************************************************************************/
 int sdma_free_chn(void *phandle);
+
+/*****************************************************************************
+ 函 数 名  : sdma_get_process_id
+ 功能描述  : 获取进程相关id信息
+ 输入参数  : fd sdma设备的文件描述符
+ 输出参数  : id 获取到的pasid或者pid
+ 返 回 值  : 0--成功 其他--错误码
+****************************************************************************/
+int sdma_get_process_id(int fd, uint32_t *id);
 
 /*****************************************************************************
  函 数 名  : sdma_query_sqe_num
@@ -99,9 +157,45 @@ int sdma_free_chn(void *phandle);
 ****************************************************************************/
 int sdma_query_sqe_num(void *phandle);
 
+/*****************************************************************************
+ 函 数 名  : sdma_query_chn
+ 功能描述  : 查询sdma通道是否已完成count个sqe任务
+ 输入参数  : phandle--sdma句柄 count--sqe数量
+ 输出参数  : 无
+ 返 回 值  : 0--成功 其他--错误码
+****************************************************************************/
+int sdma_query_chn(void *phandle, uint32_t count);
+
+/*****************************************************************************
+ 函 数 名  : sdma_query_chn
+ 功能描述  : 查询sdma通道是否已完成count个sqe任务
+ 输入参数  : phandle--sdma句柄
+	    request--sdma发送命令相关信息指针
+ 输出参数  : 无
+ 返 回 值  : 0--成功 其他--错误码
+****************************************************************************/
+int sdma_iquery_chn(void *phandle, sdma_request_t *request);
+
+/*****************************************************************************
+ 函 数 名  : sdma_devices_num
+ 功能描述  : 查询sdma设备数量
+ 输入参数  : fd--sdma文件句柄
+ 输出参数  : 无
+ 返 回 值  : sdma设备数量
+****************************************************************************/
+int sdma_devices_num(int fd);
+
+/*****************************************************************************
+ 函 数 名  : sdma_nearest_id
+ 功能描述  : 查询当前进程就近的sdma设备Id
+ 输入参数  : 无
+ 输出参数  : 无
+ 返 回 值  : -1--未找到 其他--sdma设备id
+****************************************************************************/
+int sdma_nearest_id(void);
+
 #ifdef __cplusplus
 }
 #endif
 
 #endif
-
