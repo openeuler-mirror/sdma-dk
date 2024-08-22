@@ -989,11 +989,6 @@ int sdma_icopy_data(void *phandle, sdma_sqe_task_t *sdma_sqe, uint32_t count,
 	}
 
 	pchan = (sdma_handle_t *)phandle;
-	if (pchan->sync_info->err_cnt != 0) {
-		sdma_err("sdma err happend!\n");
-		return SDMA_FAILED;
-	}
-
 	ret = sdma_lock_chn(&pchan->sync_info->lock, &pchan->sync_info->lock_pid);
 	if (ret != 0) {
 		sdma_err("sdma lock chn failed!\n");
@@ -1210,6 +1205,7 @@ int sdma_err_sqe_cnt(void *phandle, bool clr)
 	err_sqe_cnt = dfx_reg & ERR_SQE_MASK;
 
 	if (clr) {
+		pchan->sync_info->err_cnt = 0;
 		(void)pchan->funcs[SDMA_CLR_ERR_CNT].reg_func(pchan, 0);
 	}
 
