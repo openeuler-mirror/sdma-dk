@@ -790,22 +790,21 @@ static int sdma_send_task_kernel(sdma_handle_t *pchan, sdma_sqe_task_t *sdma_sqe
 {
 	sdma_sqe_task_t *task = sdma_sqe;
 	uint32_t send_task_cnt = count;
+	uint32_t tmp_cnt;
 	int ret;
 
-	if ((count * sizeof(sdma_sqe_task_t)) > HISI_SDMA_MAX_ALLOC_SIZE) {
-		ret = sdma_fill_task(pchan, task, send_task_cnt / SDMA_SEND_TASK_TIMES,
-				     req_cnt);
+	while (send_task_cnt != 0) {
+		tmp_cnt = send_task_cnt;
+		if ((send_task_cnt * sizeof(sdma_sqe_task_t)) > HISI_SDMA_MAX_ALLOC_SIZE) {
+			tmp_cnt = HISI_SDMA_MAX_ALLOC_SIZE / sizeof(sdma_sqe_task_t);
+		}
+		send_task_cnt -= tmp_cnt;
+		ret = sdma_fill_task(pchan, task, tmp_cnt, req_cnt);
 		if (ret != 0) {
 			sdma_err("sdma_fill_task failed!\n");
 			return ret;
 		}
-		send_task_cnt -= send_task_cnt / SDMA_SEND_TASK_TIMES;
-		task += send_task_cnt / SDMA_SEND_TASK_TIMES;
-	}
-	ret = sdma_fill_task(pchan, task, send_task_cnt, req_cnt);
-	if (ret != 0) {
-		sdma_err("sdma_fill_task failed!\n");
-		return ret;
+		task += tmp_cnt;
 	}
 
 	return SDMA_SUCCESS;
