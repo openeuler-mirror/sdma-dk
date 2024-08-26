@@ -15,8 +15,6 @@
 extern "C" {
 #endif
 
-#define sdma_read(reg) (*(uint32_t *)(reg))
-#define sdma_write(val, reg) (*(uint32_t *)(reg) = (uint32_t)(val))
 #define HISI_SDMA_LOCK_TIMEOUT_US 1000000
 
 typedef void (*sdma_task_callback)(int task_status, void *task_data);
