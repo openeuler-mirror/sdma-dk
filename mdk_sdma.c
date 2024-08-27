@@ -88,20 +88,6 @@ static uint32_t sdma_get_sq_tail_ioctl(const sdma_handle_t *pchan, uint32_t reg_
 	return reg_info.reg_value;
 }
 
-static uint32_t sdma_set_sq_tail_ioctl(const sdma_handle_t *pchan, uint32_t reg_val)
-{
-	struct hisi_sdma_reg_info reg_info = {0};
-
-	reg_info.chn = pchan->chn;
-	reg_info.type = HISI_SDMA_WRITE_REG;
-	reg_info.reg_value = reg_val;
-	if (ioctl(pchan->fd, IOCTL_SDMA_SQ_TAIL_REG, &reg_info) != 0) {
-		SDMA_ERR("IOCTL_SDMA_SQ_TAIL_REG fail,%s!\n", strerror(errno));
-	}
-
-	return 0;
-}
-
 static uint32_t sdma_get_cq_head_ioctl(const sdma_handle_t *pchan, uint32_t reg_val SDMA_UNUSED)
 {
 	struct hisi_sdma_reg_info reg_info = {0};
@@ -118,12 +104,15 @@ static uint32_t sdma_get_cq_head_ioctl(const sdma_handle_t *pchan, uint32_t reg_
 static uint32_t sdma_set_cq_head_ioctl(const sdma_handle_t *pchan, uint32_t reg_val)
 {
 	struct hisi_sdma_reg_info reg_info = {0};
+	int ret;
 
 	reg_info.chn = pchan->chn;
 	reg_info.type = HISI_SDMA_WRITE_REG;
 	reg_info.reg_value = reg_val;
-	if (ioctl(pchan->fd, IOCTL_SDMA_CQ_HEAD_REG, &reg_info) != 0) {
+	ret = ioctl(pchan->fd, IOCTL_SDMA_CQ_HEAD_REG, &reg_info);
+	if (ret != 0) {
 		SDMA_ERR("IOCTL_SDMA_CQ_HEAD_REG fail,%s!\n", strerror(errno));
+		return ret;
 	}
 
 	return 0;
@@ -184,7 +173,6 @@ static uint32_t sdma_clr_err_sqe_cnt_ioctl(const sdma_handle_t *pchan, uint32_t 
 struct sdma_ioctl_funcs g_sdma_ioctl_list[] = {
 	{SDMA_SQ_HEAD_READ, sdma_get_sq_head_ioctl},
 	{SDMA_SQ_TAIL_READ, sdma_get_sq_tail_ioctl},
-	{SDMA_SQ_TAIL_WRITE, sdma_set_sq_tail_ioctl},
 	{SDMA_CQ_HEAD_READ, sdma_get_cq_head_ioctl},
 	{SDMA_CQ_HEAD_WRITE, sdma_set_cq_head_ioctl},
 	{SDMA_CQ_TAIL_READ, sdma_get_cq_tail_ioctl},
@@ -268,12 +256,15 @@ static void sdma_unlock_chn(volatile int *lock, uint32_t *lock_pid)
 
 static void update_hw_sw_ptr(sdma_handle_t *pchan, uint16_t sq_head, uint16_t cq_tail)
 {
-	pchan->sync_info->sq_head = sq_head;
-	pchan->sync_info->cq_tail = cq_tail;
+	int ret;
 
-	pchan->sync_info->cq_head = cq_tail;
 	/* Updata HW CQ HEAD */
-	(void)pchan->funcs[SDMA_CQ_HEAD_WRITE].reg_func(pchan, pchan->sync_info->cq_head);
+	ret = pchan->funcs[SDMA_CQ_HEAD_WRITE].reg_func(pchan, cq_tail);
+	if (ret == 0) {
+		pchan->sync_info->sq_head = sq_head;
+		pchan->sync_info->cq_tail = cq_tail;
+		pchan->sync_info->cq_head = cq_tail;
+	}
 }
 
 static int sdma_task_check(sdma_handle_t *pchan, uint32_t task_num)
@@ -390,13 +381,17 @@ static void update_round_cnt(sdma_handle_t *pchan, uint16_t hardware_cq_tail)
 {
 	sdma_cq_entry_t *cq_entry = NULL;
 	uint16_t cq_head;
+	int ret;
 
 	cq_head = pchan->sync_info->cq_head;
+	if (hardware_cq_tail == cq_head) {
+		return;
+	}
 	while (cq_head != hardware_cq_tail) {
 		cq_entry = pchan->cqe + cq_head;
 		if (cq_entry->status != 0) {
 			SDMA_ERR("cq_entry invalid, status: %u\n", cq_entry->status);
-			pchan->sync_info->cqe_err[cq_head] = (int)cq_entry->status;
+			pchan->sync_info->cqe_err[cq_head] = cqe_err_code(cq_entry->status);
 			__sync_fetch_and_add(&pchan->sync_info->err_cnt, 1);
 		}
 
@@ -404,11 +399,13 @@ static void update_round_cnt(sdma_handle_t *pchan, uint16_t hardware_cq_tail)
 		cq_head++;
 	}
 
-	pchan->sync_info->cq_tail = hardware_cq_tail;
-	pchan->sync_info->cq_head = cq_head;
-	/* iwait模式 软件的CQ HEAD和SQ HEAD应保持一致 */
-	pchan->sync_info->sq_head = pchan->sync_info->cq_head;
-	(void)pchan->funcs[SDMA_CQ_HEAD_WRITE].reg_func(pchan, pchan->sync_info->cq_head);
+	ret = pchan->funcs[SDMA_CQ_HEAD_WRITE].reg_func(pchan, hardware_cq_tail);
+	if (ret == 0) {
+		pchan->sync_info->cq_tail = hardware_cq_tail;
+		/* iwait mode software CQ HEAD & SQ HEAD synchronize*/
+		pchan->sync_info->cq_head = hardware_cq_tail;
+		pchan->sync_info->sq_head = hardware_cq_tail;
+	}
 }
 
 static bool rndcnt_invalid(const sdma_handle_t *pchan, uint32_t last_req_cqe, uint32_t round_cnt)
@@ -946,10 +943,13 @@ int sdma_progress(void *phandle)
 	}
 
 	if (flag) {
-		pchan->sync_info->sq_head = sq_head;
-		pchan->sync_info->cq_head = cq_head;
-		pchan->sync_info->cq_vld = cq_vld;
-		(void)pchan->funcs[SDMA_CQ_HEAD_WRITE].reg_func(pchan, pchan->sync_info->cq_head);
+		ret = pchan->funcs[SDMA_CQ_HEAD_WRITE].reg_func(pchan, cq_head);
+		if (ret == 0) {
+			pchan->sync_info->sq_head = sq_head;
+			pchan->sync_info->cq_head = cq_head;
+			pchan->sync_info->cq_tail = cq_head;
+			pchan->sync_info->cq_vld = cq_vld;
+		}
 	}
 	pthread_spin_unlock(&pchan->q_data.task_lock);
 

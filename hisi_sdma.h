@@ -167,7 +167,6 @@ struct hisi_sdma_task_info {
 enum sdma_reg_ops {
 	SDMA_SQ_HEAD_READ,
 	SDMA_SQ_TAIL_READ,
-	SDMA_SQ_TAIL_WRITE,
 	SDMA_CQ_HEAD_READ,
 	SDMA_CQ_HEAD_WRITE,
 	SDMA_CQ_TAIL_READ,
