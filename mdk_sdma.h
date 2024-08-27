@@ -108,7 +108,7 @@ void *sdma_alloc_chn(int fd);
  输出参数  : 无
  返 回 值  : sdma句柄
 ****************************************************************************/
-void *sdma_init_chn(int fd, int chn);
+void *sdma_init_chn(int fd, uint32_t chn);
 
 /*****************************************************************************
  函 数 名  : sdma_deinit_chn
@@ -298,7 +298,7 @@ int sdma_chn_err_info(void *phandle, sdma_chn_err_t *chn_err);
  输出参数  : 无
  返 回 值  : 0--成功 其他--错误码
 ****************************************************************************/
-int sdma_add_authority(int fd, int *id_list, int num);
+int sdma_add_authority(int fd, uint32_t *id_list, uint32_t num);
 
 #ifdef __cplusplus
 }

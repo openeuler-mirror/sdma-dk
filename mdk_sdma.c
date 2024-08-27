@@ -41,7 +41,7 @@
 
 typedef struct sdma_handle {
 	int fd;
-	int chn;
+	uint32_t chn;
 	struct hisi_sdma_sq_entry *sqe;
 	struct hisi_sdma_cq_entry *cqe;
 	struct hisi_sdma_queue_info *sync_info;
@@ -562,7 +562,7 @@ static int sdma_mmap(uint32_t chn_num, sdma_handle_t *phandle, size_t cqe_size, 
 	void *ptr;
 
 	/* The offset of the mapped cqe memory ranges is [chn_num, 2*chn_num] * pagesize */
-	offset = (off_t)(((uint32_t)phandle->chn + chn_num * HISI_SDMA_MMAP_CQE) * g_page_size);
+	offset = (off_t)((phandle->chn + chn_num * HISI_SDMA_MMAP_CQE) * g_page_size);
 	ptr = mmap(NULL, cqe_size, PROT_READ | PROT_WRITE, MAP_SHARED, phandle->fd, offset);
 	if (ptr == MAP_FAILED) {
 		SDMA_ERR("mmap cqe failed\n");
@@ -571,7 +571,7 @@ static int sdma_mmap(uint32_t chn_num, sdma_handle_t *phandle, size_t cqe_size, 
 	phandle->cqe = (sdma_cq_entry_t *)ptr;
 
 	/* The offset of the mapped io_register ranges is [3*chn_num, 4*chn_num] * pagesize */
-	offset = (off_t)((chn_num * HISI_SDMA_MMAP_SHMEM + (uint32_t)phandle->chn) * g_page_size);
+	offset = (off_t)((chn_num * HISI_SDMA_MMAP_SHMEM + phandle->chn) * g_page_size);
 	ptr = mmap(NULL, sync_size, PROT_READ | PROT_WRITE, MAP_SHARED, phandle->fd, offset);
 	if (ptr == MAP_FAILED) {
 		SDMA_ERR("mmap sync info failed\n");
@@ -670,7 +670,7 @@ void *sdma_alloc_chn(int fd)
 {
 	struct hisi_sdma_chn_num chn_num;
 	sdma_handle_t *pchan = NULL;
-	int chn;
+	uint32_t chn;
 	int ret;
 
 	if (ioctl(fd, IOCTL_GET_SDMA_CHN_NUM, &chn_num) != 0) {
@@ -698,7 +698,7 @@ void *sdma_alloc_chn(int fd)
 	pchan->sync_info->cq_head = pchan->funcs[SDMA_CQ_HEAD_READ].reg_func(pchan, 0);
 	pchan->sync_info->cq_tail = pchan->funcs[SDMA_CQ_TAIL_READ].reg_func(pchan, 0);
 	if (pchan->sync_info->sq_head != pchan->sync_info->sq_tail) {
-		SDMA_ERR("sdma chn%d SQE unnormal! SQ head = %hu,SQ tail = %hu\n", chn,
+		SDMA_ERR("sdma chn%u SQE unnormal! SQ head = %hu,SQ tail = %hu\n", chn,
 			 pchan->sync_info->sq_head, pchan->sync_info->sq_tail);
 		goto err_unmap;
 	}
@@ -718,7 +718,7 @@ err_out:
 	return NULL;
 }
 
-void *sdma_init_chn(int fd, int chn)
+void *sdma_init_chn(int fd, uint32_t chn)
 {
 	struct hisi_sdma_share_chn share_chn;
 	struct hisi_sdma_chn_num chn_num;
@@ -731,13 +731,18 @@ void *sdma_init_chn(int fd, int chn)
 		goto err_out;
 	}
 
+	if (chn_num.share_chn_num == 0) {
+		SDMA_ERR("no share_chn avaliable!\n");
+		goto err_out;
+	}
+
 	pchan = (sdma_handle_t *)calloc(1, sizeof(sdma_handle_t));
 	if (pchan == NULL) {
 		SDMA_ERR("calloc pchan failed,%s!\n", strerror(errno));
 		goto err_out;
 	}
 
-	pchan->chn = chn % (int)chn_num.share_chn_num;
+	pchan->chn = chn % chn_num.share_chn_num;
 	pchan->fd = fd;
 	share_chn.chn_idx = pchan->chn;
 	share_chn.init_flag = true;
@@ -895,7 +900,7 @@ static void sdma_exec_callback_func(sdma_handle_t *pchan, uint32_t sqe_id, int s
 		task_data = pchan->q_data.task_data[sqe_id];
 		task_cb(sqe_status, task_data);
 	} else {
-		SDMA_DBG("chn%d task callback function is NULL, sqe_id = %u, status = %d\n",
+		SDMA_DBG("chn%u task callback function is NULL, sqe_id = %u, status = %d\n",
 			pchan->chn, sqe_id, sqe_status);
 	}
 }
@@ -1214,8 +1219,8 @@ int sdma_pin_umem(int fd, void *vma, uint32_t size, uint64_t *cookie)
 	struct hisi_sdma_umem_info umem_info;
 	int ret;
 
-	if (!vma) {
-		SDMA_ERR("sdma vma is NULL!\n");
+	if (!vma || size == 0) {
+		SDMA_ERR("sdma vma/size is NULL!\n");
 		return SDMA_NULL_POINTER;
 	}
 
@@ -1297,7 +1302,7 @@ int sdma_chn_err_info(void *phandle, sdma_chn_err_t *chn_err)
 	return SDMA_SUCCESS;
 }
 
-int sdma_add_authority(int fd, int *id_list, int num)
+int sdma_add_authority(int fd, uint32_t *id_list, uint32_t num)
 {
 	struct hisi_sdma_pid_info info;
 	int ret;

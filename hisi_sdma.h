@@ -147,18 +147,18 @@ struct hisi_sdma_share_chn {
 };
 
 struct hisi_sdma_pid_info {
-	int num;
+	uint32_t num;
 	uintptr_t pid_list_addr;
 };
 
 struct hisi_sdma_reg_info {
-	int chn;
+	uint32_t chn;
 	int type;
 	uint32_t reg_value;
 };
 
 struct hisi_sdma_task_info {
-	int chn;
+	uint32_t chn;
 	uint32_t req_cnt;
 	uint32_t task_cnt;
 	uintptr_t task_addr;
@@ -177,8 +177,8 @@ enum sdma_reg_ops {
 };
 
 #define IOCTL_SDMA_GET_PROCESS_ID	    _IOR('s', 1, uint32_t)
-#define IOCTL_SDMA_GET_CHN		    _IOR('s', 2, int)
-#define IOCTL_SDMA_PUT_CHN		    _IOW('s', 3, int)
+#define IOCTL_SDMA_GET_CHN		    _IOR('s', 2, uint32_t)
+#define IOCTL_SDMA_PUT_CHN		    _IOW('s', 3, uint32_t)
 #define IOCTL_SDMA_GET_STREAMID		    _IOR('s', 4, uint32_t)
 #define IOCTL_SDMA_PIN_UMEM		    _IOWR('s', 5, struct hisi_sdma_umem_info)
 #define IOCTL_SDMA_UNPIN_UMEM		    _IOW('s', 6, uint64_t)
