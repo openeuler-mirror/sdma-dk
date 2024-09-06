@@ -46,7 +46,6 @@ typedef struct sdma_handle {
 	struct hisi_sdma_cq_entry *cqe;
 	struct hisi_sdma_queue_info *sync_info;
 	struct hisi_sdma_queue_data q_data;
-	uint32_t chan_qe_depth;
 	uint16_t streamid;
 	void *io_align_base;
 	void *io_base;
@@ -60,7 +59,6 @@ struct sdma_ioctl_funcs {
 };
 
 static size_t g_page_size = 0;
-typedef struct hisi_sdma_cq_entry sdma_cq_entry_t;
 
 static uint32_t sdma_get_sq_head_ioctl(const sdma_handle_t *pchan, uint32_t reg_val SDMA_UNUSED)
 {
@@ -188,7 +186,7 @@ static int cqe_err_code(uint32_t status)
 
 static int sdma_cqe_check(sdma_handle_t *pchan, uint16_t sq_id, uint16_t cq_tail)
 {
-	sdma_cq_entry_t *cq_entry = NULL;
+	struct hisi_sdma_cq_entry *cq_entry = NULL;
 	int ret = 0;
 
 	cq_entry = pchan->cqe + cq_tail;
@@ -209,13 +207,13 @@ static int sdma_cqe_check(sdma_handle_t *pchan, uint16_t sq_id, uint16_t cq_tail
 	return ret;
 }
 
-static uint32_t sdma_task_num(uint32_t head, uint32_t tail, uint32_t len)
+static uint32_t sdma_task_num(uint32_t head, uint32_t tail)
 {
 	if (head > tail) {
-		return (tail + HISI_SDMA_SQ_LEN - head) & (len - 1);
+		return (tail + HISI_SDMA_SQ_LEN - head) & (HISI_SDMA_SQ_LEN - 1);
 	}
 
-	return (tail - head) & (len - 1);
+	return (tail - head) & (HISI_SDMA_SQ_LEN - 1);
 }
 
 static uint32_t sdma_channel_get_finish_count(sdma_handle_t *pchan)
@@ -226,10 +224,10 @@ static uint32_t sdma_channel_get_finish_count(sdma_handle_t *pchan)
 	head_before = pchan->sync_info->sq_head;
 
 	if (head < head_before) {
-		return (head + HISI_SDMA_SQ_LEN - head_before) & (pchan->chan_qe_depth - 1);
+		return (head + HISI_SDMA_SQ_LEN - head_before) & (HISI_SDMA_SQ_LEN - 1);
 	}
 
-	return (head - head_before) & (pchan->chan_qe_depth - 1);
+	return (head - head_before) & (HISI_SDMA_SQ_LEN - 1);
 }
 
 static int sdma_lock_chn(volatile int *lock, uint32_t *lock_pid)
@@ -269,7 +267,7 @@ static void update_hw_sw_ptr(sdma_handle_t *pchan, uint16_t sq_head, uint16_t cq
 
 static int sdma_task_check(sdma_handle_t *pchan, uint32_t task_num)
 {
-	sdma_cq_entry_t *cq_entry = NULL;
+	struct hisi_sdma_cq_entry *cq_entry = NULL;
 	uint32_t cq_vld, num = task_num;
 	uint16_t cq_tail, sq_id;
 	int ret = SDMA_SUCCESS;
@@ -334,6 +332,14 @@ int sdma_check_handle(void *phandle)
 		return SDMA_NULL_POINTER;
 	}
 
+	if (pchan->sync_info->sq_head >= HISI_SDMA_SQ_LEN ||
+	    pchan->sync_info->sq_tail >= HISI_SDMA_SQ_LEN ||
+	    pchan->sync_info->cq_head >= HISI_SDMA_SQ_LEN ||
+	    pchan->sync_info->cq_tail >= HISI_SDMA_SQ_LEN) {
+		SDMA_ERR("sdma sq/cq register info invalid!\n");
+		return SDMA_QNUM_OVERFLOW;
+	}
+
 	return SDMA_SUCCESS;
 }
 
@@ -349,8 +355,7 @@ int sdma_wait_chn(void *phandle, uint32_t count)
 	}
 
 	pchan = (sdma_handle_t *)phandle;
-	num = sdma_task_num(pchan->sync_info->sq_head, pchan->sync_info->sq_tail,
-			    HISI_SDMA_SQ_LEN);
+	num = sdma_task_num(pchan->sync_info->sq_head, pchan->sync_info->sq_tail);
 	if (num < count) {
 		return SDMA_WAIT_NUM_OVERFLOW;
 	}
@@ -369,17 +374,18 @@ int sdma_query_chn(void *phandle, uint32_t count)
 		return ret;
 	}
 	pchan = (sdma_handle_t *)phandle;
-	sq_finish_count = sdma_channel_get_finish_count(pchan);
-	if (sq_finish_count >= count) {
-		return SDMA_SUCCESS;
+	sq_finish_count = (uint32_t)sdma_channel_get_finish_count(pchan);
+	ret = sdma_task_check(pchan, sq_finish_count);
+	if (ret != 0) {
+		return SDMA_TASK_UNFINISH;
 	}
 
-	return SDMA_TASK_UNFINISH;
+	return SDMA_SUCCESS;
 }
 
 static void update_round_cnt(sdma_handle_t *pchan, uint16_t hardware_cq_tail)
 {
-	sdma_cq_entry_t *cq_entry = NULL;
+	struct hisi_sdma_cq_entry *cq_entry = NULL;
 	uint16_t cq_head;
 	int ret;
 
@@ -428,13 +434,13 @@ static int cqe_status(sdma_handle_t *pchan, uint16_t req_id, uint32_t req_cnt)
 	uint32_t i;
 
 	if (pchan->sync_info->err_cnt == 0) {
-		return 0;
+		return ret;
 	}
 
 	for (i = 0; i < req_cnt; i++) {
 		cqe_id = (req_id + i) % HISI_SDMA_CQ_LEN;
 		if (pchan->sync_info->cqe_err[cqe_id] != 0) {
-			SDMA_ERR("cqe%u error status = %d\n", req_id + i,
+			SDMA_ERR("cqe%u error status = %d\n", cqe_id,
 				 pchan->sync_info->cqe_err[cqe_id]);
 			ret = pchan->sync_info->cqe_err[cqe_id];
 			pchan->sync_info->cqe_err[cqe_id] = 0;
@@ -489,8 +495,7 @@ int sdma_iwait_chn(void *phandle, sdma_request_t *request)
 		return ret;
 	}
 
-	num = sdma_task_num(pchan->sync_info->sq_head, pchan->sync_info->sq_tail,
-			    HISI_SDMA_SQ_LEN);
+	num = sdma_task_num(pchan->sync_info->sq_head, pchan->sync_info->sq_tail);
 	if (num > 0) {
 		ret = sdma_task_check(pchan, num);
 		if (ret == SDMA_INVALID_DOORBELL || ret == SDMA_CQE_MEM_RSVD) {
@@ -565,7 +570,7 @@ static int sdma_mmap(uint32_t chn_num, sdma_handle_t *phandle, size_t cqe_size, 
 		SDMA_ERR("mmap cqe failed\n");
 		return SDMA_FAILED;
 	}
-	phandle->cqe = (sdma_cq_entry_t *)ptr;
+	phandle->cqe = (struct hisi_sdma_cq_entry *)ptr;
 
 	/* The offset of the mapped io_register ranges is [3*chn_num, 4*chn_num] * pagesize */
 	offset = (off_t)((chn_num * HISI_SDMA_MMAP_SHMEM + phandle->chn) * g_page_size);
@@ -592,7 +597,7 @@ static void sdma_munmap_chn(sdma_handle_t *phandle)
 	size_t cqe_size, sync_size;
 	int ret;
 
-	ret = sdma_get_mmap_size(phandle->chan_qe_depth, &cqe_size, &sync_size);
+	ret = sdma_get_mmap_size(HISI_SDMA_SQ_LEN, &cqe_size, &sync_size);
 	if (ret < 0) {
 		SDMA_ERR("get mmap size failed\n");
 		return;
@@ -614,8 +619,7 @@ static int sdma_mmap_chn(uint32_t chn_num, sdma_handle_t *phandle)
 	size_t cqe_size, sync_size;
 	int ret;
 
-	phandle->chan_qe_depth = HISI_SDMA_SQ_LEN;
-	ret = sdma_get_mmap_size(phandle->chan_qe_depth, &cqe_size, &sync_size);
+	ret = sdma_get_mmap_size(HISI_SDMA_SQ_LEN, &cqe_size, &sync_size);
 	if (ret < 0) {
 		SDMA_ERR("get mmap size failed\n");
 		return SDMA_FAILED;
@@ -681,8 +685,7 @@ void *sdma_alloc_chn(int fd)
 	pchan = (sdma_handle_t *)calloc(1, sizeof(sdma_handle_t));
 	if (pchan == NULL) {
 		SDMA_ERR("calloc pchan failed,%s!\n", strerror(errno));
-		ioctl(fd, IOCTL_SDMA_PUT_CHN, &chn);
-		goto err_out;
+		goto err_put;
 	}
 	pchan->chn = chn;
 	pchan->fd = fd;
@@ -709,8 +712,11 @@ void *sdma_alloc_chn(int fd)
 err_unmap:
 	sdma_munmap_chn(pchan);
 err_free:
-	ioctl(pchan->fd, IOCTL_SDMA_PUT_CHN, &chn);
 	free(pchan);
+err_put:
+	if(!ioctl(fd, IOCTL_SDMA_PUT_CHN, &chn)) {
+		SDMA_ERR("IOCTL_SDMA_PUT_CHN fail,%s!\n", strerror(errno));
+	}
 err_out:
 	return NULL;
 }
@@ -756,13 +762,18 @@ void *sdma_init_chn(int fd, uint32_t chn)
 	return (void *)pchan;
 
 err_free:
+	share_chn.init_flag = false;
+	ret = ioctl(fd, IOCTL_SDMA_CHN_USED_REFCOUNT, &share_chn);
+	if (ret != 0) {
+		SDMA_ERR("IOCTL_SDMA_CHN_USED_REFCOUNT fail,%s!\n", strerror(errno));
+	}
 	free(pchan);
 err_out:
 	return NULL;
 }
 
 static int sdma_fill_task(sdma_handle_t *pchan, sdma_sqe_task_t *sdma_sqe, uint32_t count,
-									uint32_t *req_cnt)
+			  uint32_t *req_cnt)
 {
 	struct hisi_sdma_task_info task_info = {0};
 	int ret = 0;
@@ -863,12 +874,6 @@ int sdma_copy_data(void *phandle, sdma_sqe_task_t *sdma_sqe, uint32_t count)
 		task = task->next_sqe;
 	}
 
-	ret = pthread_spin_lock(&pchan->q_data.task_lock);
-	if (ret != 0) {
-		SDMA_ERR("sdma failed to get lock\n");
-		return ret;
-	}
-
 	if (count > (uint32_t)sdma_query_sqe_num(pchan)) {
 		pthread_spin_unlock(&pchan->q_data.task_lock);
 		SDMA_ERR("sdma sqe number = %u is overflow!\n", count);
@@ -881,8 +886,6 @@ int sdma_copy_data(void *phandle, sdma_sqe_task_t *sdma_sqe, uint32_t count)
 		SDMA_ERR("sdma copy failed!\n");
 		return SDMA_FAILED;
 	}
-
-	pthread_spin_unlock(&pchan->q_data.task_lock);
 
 	return SDMA_SUCCESS;
 }
@@ -905,7 +908,7 @@ static void sdma_exec_callback_func(sdma_handle_t *pchan, uint32_t sqe_id, int s
 int sdma_progress(void *phandle)
 {
 	uint32_t sq_head, cq_head, cq_vld, sqe_id, flag = 0, num = 0, i = 0;
-	sdma_cq_entry_t *cq_entry;
+	struct hisi_sdma_cq_entry *cq_entry;
 	sdma_handle_t *pchan;
 	int sqe_status, ret;
 
@@ -922,7 +925,7 @@ int sdma_progress(void *phandle)
 	sq_head = pchan->sync_info->sq_head;
 	cq_head = pchan->sync_info->cq_head;
 	cq_vld = pchan->sync_info->cq_vld;
-	num = sdma_task_num(pchan->sync_info->sq_head, pchan->sync_info->sq_tail, HISI_SDMA_SQ_LEN);
+	num = sdma_task_num(pchan->sync_info->sq_head, pchan->sync_info->sq_tail);
 	while (i++ < HISI_SDMA_CQE_TIMEOUT && num > 0) {
 		cq_entry = pchan->cqe + cq_head;
 		if (cq_vld != cq_entry->vld)
@@ -1074,7 +1077,6 @@ int sdma_free_chn(void *phandle)
 	sdma_munmap_chn(pchan);
 	pthread_spin_destroy(&pchan->q_data.task_lock);
 	free(phandle);
-	phandle = NULL;
 
 	return ret;
 }
@@ -1102,7 +1104,6 @@ int sdma_deinit_chn(void *phandle)
 	sdma_munmap_chn(pchan);
 	pthread_spin_destroy(&pchan->q_data.task_lock);
 	free(phandle);
-	phandle = NULL;
 
 	return SDMA_SUCCESS;
 }
@@ -1110,9 +1111,9 @@ int sdma_deinit_chn(void *phandle)
 int sdma_query_sqe_num(void *phandle)
 {
 	sdma_handle_t *pchan = NULL;
-	int tail;
-	int head;
-	int num;
+	uint32_t tail;
+	uint32_t head;
+	uint32_t num;
 	int ret;
 
 	ret = sdma_check_handle(phandle);
@@ -1120,16 +1121,16 @@ int sdma_query_sqe_num(void *phandle)
 		return ret;
 	}
 	pchan = (sdma_handle_t *)phandle;
-	tail = (int)pchan->sync_info->sq_tail;
-	head = (int)pchan->sync_info->sq_head;
+	tail = pchan->sync_info->sq_tail;
+	head = pchan->sync_info->sq_head;
 
 	if (tail >= head) {
-		num = (int)pchan->chan_qe_depth - (tail - head) - 1;
+		num = HISI_SDMA_SQ_LEN - (tail - head) - 1;
 	} else {
 		num = head - tail - 1;
 	}
 
-	return num;
+	return (int)num;
 }
 
 int sdma_devices_num(int fd)

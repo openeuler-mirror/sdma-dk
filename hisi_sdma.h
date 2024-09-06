@@ -31,7 +31,7 @@
 #define HISI_SDMA_CH_SQHDBR_REG		0x50
 #define HISI_SDMA_CH_CQTDBR_REG		0x8C
 #define HISI_SDMA_CH_CQHDBR_REG		0x90
-#define HISI_SDMA_CH_DFX_REG		 0x300
+#define HISI_SDMA_CH_DFX_REG		0x300
 
 #define ERR_SQE_MASK			0xffff
 #define NORMAL_SQE_SHIFT		16
@@ -114,10 +114,10 @@ struct hisi_sdma_cq_entry {
 };
 
 struct hisi_sdma_queue_info {
-	uint32_t			sq_head;
-	uint32_t			sq_tail;
-	uint32_t			cq_head;
-	uint32_t			cq_tail;
+	uint16_t			sq_head;
+	uint16_t			sq_tail;
+	uint16_t			cq_head;
+	uint16_t			cq_tail;
 	uint32_t			cq_vld;
 	int				lock;
 	uint32_t			lock_pid;
