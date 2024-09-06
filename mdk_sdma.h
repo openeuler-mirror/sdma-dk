@@ -15,6 +15,9 @@
 extern "C" {
 #endif
 
+#define SDMA_READ(reg) (*(uint32_t *)(reg))
+#define SDMA_WRITE(val, reg) (*(uint32_t *)(reg) = (uint32_t)(val))
+
 #define HISI_SDMA_LOCK_TIMEOUT_US 1000000
 
 typedef void (*sdma_task_callback)(int task_status, void *task_data);
@@ -197,7 +200,7 @@ int sdma_free_chn(void *phandle);
  输出参数  : 无
  返 回 值  : sdma通道剩余可用的sqe数目
 ****************************************************************************/
-int sdma_query_sqe_num(void *phandle);
+uint32_t sdma_query_sqe_num(void *phandle);
 
 /*****************************************************************************
  函 数 名  : sdma_query_chn

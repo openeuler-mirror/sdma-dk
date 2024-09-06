@@ -23,8 +23,8 @@
 #define HISI_SDMA_MMAP_SHMEM		3
 #define HISI_SDMA_FSM_TIMEOUT		10
 
-#define HISI_SDMA_SQ_LEN		(1U << 16)
-#define HISI_SDMA_CQ_LEN		(1U << 16)
+#define HISI_SDMA_SQ_LEN		(1U << 10)
+#define HISI_SDMA_CQ_LEN		(1U << 10)
 #define HISI_SDMA_REG_SIZE		4096
 
 #define HISI_SDMA_CH_SQTDBR_REG		0x4C
@@ -42,6 +42,9 @@
 #define HISI_SDMA_CLR_NORMAL_SQE_CNT	1
 #define HISI_SDMA_CLR_ERR_SQE_CNT	2
 #define HISI_SDMA_SRC_H_WIDTH		32
+
+#define HISI_SDMA_FAST_MODE		0
+#define HISI_SDMA_SAFE_MODE		1
 
 #define SDMA_UNUSED			__attribute__((__unused__))
 
@@ -167,6 +170,7 @@ struct hisi_sdma_task_info {
 enum sdma_reg_ops {
 	SDMA_SQ_HEAD_READ,
 	SDMA_SQ_TAIL_READ,
+	SDMA_SQ_TAIL_WRITE,
 	SDMA_CQ_HEAD_READ,
 	SDMA_CQ_HEAD_WRITE,
 	SDMA_CQ_TAIL_READ,
@@ -194,5 +198,6 @@ enum sdma_reg_ops {
 #define IOCTL_SDMA_CQ_TAIL_REG		    _IOWR('s', 17, struct hisi_sdma_reg_info)
 #define IOCTL_SDMA_DFX_REG		    _IOWR('s', 18, struct hisi_sdma_reg_info)
 #define IOCTL_SDMA_SQE_CNT_REG		    _IOW('s', 19, struct hisi_sdma_reg_info)
+#define IOCTL_GET_SDMA_MODE		    _IOR('s', 20, bool)
 
 #endif
