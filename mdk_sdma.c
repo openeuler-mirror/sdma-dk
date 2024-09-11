@@ -1077,17 +1077,17 @@ int sdma_copy_data(void *phandle, sdma_sqe_task_t *sdma_sqe, uint32_t count)
 		return SDMA_FAILED;
 	}
 
+	if (count > sdma_query_sqe_num(pchan)) {
+		SDMA_ERR("sdma sqe number = %u is overflow!\n", count);
+		return SDMA_FAILED;
+	}
+
 	for (i = 0, task = sdma_sqe; i < count; i++) {
 		if (task->length == 0) {
 			SDMA_ERR("sdma task[%u] data length = 0\n", i);
 			return SDMA_FAILED;
 		}
 		task = task->next_sqe;
-	}
-
-	if (count > sdma_query_sqe_num(pchan)) {
-		SDMA_ERR("sdma sqe number = %u is overflow!\n", count);
-		return SDMA_FAILED;
 	}
 
 	if (sdma_mode == HISI_SDMA_FAST_MODE) {
@@ -1098,7 +1098,7 @@ int sdma_copy_data(void *phandle, sdma_sqe_task_t *sdma_sqe, uint32_t count)
 			SDMA_ERR("sdma copy under safe mode failed!\n");
 			return SDMA_FAILED;
 		}
- 	}
+	}
 
 	return SDMA_SUCCESS;
 }
@@ -1252,7 +1252,7 @@ int sdma_icopy_data(void *phandle, sdma_sqe_task_t *sdma_sqe, uint32_t count,
 			SDMA_ERR("sdma icopy under safe mode failed\n");
 			return SDMA_FAILED;
 		}
- 	}
+	}
 
 	sdma_unlock_chn(&pchan->sync_info->lock, &pchan->sync_info->lock_pid);
 
