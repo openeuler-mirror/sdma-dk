@@ -15,8 +15,9 @@
 extern "C" {
 #endif
 
-#define sdma_read(reg) (*(uint32_t *)(reg))
-#define sdma_write(val, reg) (*(uint32_t *)(reg) = (uint32_t)(val))
+#define SDMA_READ(reg) (*(uint32_t *)(reg))
+#define SDMA_WRITE(val, reg) (*(uint32_t *)(reg) = (uint32_t)(val))
+
 #define HISI_SDMA_LOCK_TIMEOUT_US 1000000
 
 typedef void (*sdma_task_callback)(int task_status, void *task_data);
@@ -73,6 +74,7 @@ typedef enum {
 	SDMA_RNDCNT_ERR		= -8,
 	SDMA_INVALID_DOORBELL	= -9,
 	SDMA_CQE_MEM_RSVD	= -10,
+	SDMA_QNUM_OVERFLOW	= -11,
 
 	SDMA_INVALID_OPCODE	= -100001,
 	SDMA_ECC_ERR		= -100002,
@@ -110,7 +112,7 @@ void *sdma_alloc_chn(int fd);
  输出参数  : 无
  返 回 值  : sdma句柄
 ****************************************************************************/
-void *sdma_init_chn(int fd, int chn);
+void *sdma_init_chn(int fd, uint32_t chn);
 
 /*****************************************************************************
  函 数 名  : sdma_deinit_chn
@@ -198,7 +200,7 @@ int sdma_free_chn(void *phandle);
  输出参数  : 无
  返 回 值  : sdma通道剩余可用的sqe数目
 ****************************************************************************/
-int sdma_query_sqe_num(void *phandle);
+uint32_t sdma_query_sqe_num(void *phandle);
 
 /*****************************************************************************
  函 数 名  : sdma_query_chn
@@ -300,7 +302,7 @@ int sdma_chn_err_info(void *phandle, sdma_chn_err_t *chn_err);
  输出参数  : 无
  返 回 值  : 0--成功 其他--错误码
 ****************************************************************************/
-int sdma_add_authority(int fd, int *id_list, int num);
+int sdma_add_authority(int fd, uint32_t *id_list, uint32_t num);
 
 #ifdef __cplusplus
 }

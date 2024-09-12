@@ -23,15 +23,15 @@
 #define HISI_SDMA_MMAP_SHMEM		3
 #define HISI_SDMA_FSM_TIMEOUT		10
 
-#define HISI_SDMA_SQ_LEN		(1U << 16)
-#define HISI_SDMA_CQ_LEN		(1U << 16)
+#define HISI_SDMA_SQ_LEN		(1U << 10)
+#define HISI_SDMA_CQ_LEN		(1U << 10)
 #define HISI_SDMA_REG_SIZE		4096
 
 #define HISI_SDMA_CH_SQTDBR_REG		0x4C
 #define HISI_SDMA_CH_SQHDBR_REG		0x50
 #define HISI_SDMA_CH_CQTDBR_REG		0x8C
 #define HISI_SDMA_CH_CQHDBR_REG		0x90
-#define HISI_SDMA_CH_DFX_REG		 0x300
+#define HISI_SDMA_CH_DFX_REG		0x300
 
 #define ERR_SQE_MASK			0xffff
 #define NORMAL_SQE_SHIFT		16
@@ -42,6 +42,9 @@
 #define HISI_SDMA_CLR_NORMAL_SQE_CNT	1
 #define HISI_SDMA_CLR_ERR_SQE_CNT	2
 #define HISI_SDMA_SRC_H_WIDTH		32
+
+#define HISI_SDMA_FAST_MODE		0
+#define HISI_SDMA_SAFE_MODE		1
 
 #define SDMA_UNUSED			__attribute__((__unused__))
 
@@ -114,10 +117,10 @@ struct hisi_sdma_cq_entry {
 };
 
 struct hisi_sdma_queue_info {
-	uint32_t			sq_head;
-	uint32_t			sq_tail;
-	uint32_t			cq_head;
-	uint32_t			cq_tail;
+	uint16_t			sq_head;
+	uint16_t			sq_tail;
+	uint16_t			cq_head;
+	uint16_t			cq_tail;
 	uint32_t			cq_vld;
 	int				lock;
 	uint32_t			lock_pid;
@@ -147,18 +150,18 @@ struct hisi_sdma_share_chn {
 };
 
 struct hisi_sdma_pid_info {
-	int num;
+	uint32_t num;
 	uintptr_t pid_list_addr;
 };
 
 struct hisi_sdma_reg_info {
-	int chn;
+	uint32_t chn;
 	int type;
 	uint32_t reg_value;
 };
 
 struct hisi_sdma_task_info {
-	int chn;
+	uint32_t chn;
 	uint32_t req_cnt;
 	uint32_t task_cnt;
 	uintptr_t task_addr;
@@ -177,8 +180,8 @@ enum sdma_reg_ops {
 };
 
 #define IOCTL_SDMA_GET_PROCESS_ID	    _IOR('s', 1, uint32_t)
-#define IOCTL_SDMA_GET_CHN		    _IOR('s', 2, int)
-#define IOCTL_SDMA_PUT_CHN		    _IOW('s', 3, int)
+#define IOCTL_SDMA_GET_CHN		    _IOR('s', 2, uint32_t)
+#define IOCTL_SDMA_PUT_CHN		    _IOW('s', 3, uint32_t)
 #define IOCTL_SDMA_GET_STREAMID		    _IOR('s', 4, uint32_t)
 #define IOCTL_SDMA_PIN_UMEM		    _IOWR('s', 5, struct hisi_sdma_umem_info)
 #define IOCTL_SDMA_UNPIN_UMEM		    _IOW('s', 6, uint64_t)
@@ -195,5 +198,6 @@ enum sdma_reg_ops {
 #define IOCTL_SDMA_CQ_TAIL_REG		    _IOWR('s', 17, struct hisi_sdma_reg_info)
 #define IOCTL_SDMA_DFX_REG		    _IOWR('s', 18, struct hisi_sdma_reg_info)
 #define IOCTL_SDMA_SQE_CNT_REG		    _IOW('s', 19, struct hisi_sdma_reg_info)
+#define IOCTL_GET_SDMA_MODE		    _IOR('s', 20, bool)
 
 #endif
