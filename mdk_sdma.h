@@ -18,7 +18,7 @@ extern "C" {
 #define SDMA_READ(reg) (*(uint32_t *)(reg))
 #define SDMA_WRITE(val, reg) (*(uint32_t *)(reg) = (uint32_t)(val))
 
-#define HISI_SDMA_LOCK_TIMEOUT_US 1000000
+#define HISI_SDMA_LOCK_TIMEOUT_TIMES 1000000
 
 typedef void (*sdma_task_callback)(int task_status, void *task_data);
 
@@ -75,6 +75,7 @@ typedef enum {
 	SDMA_INVALID_DOORBELL	= -9,
 	SDMA_CQE_MEM_RSVD	= -10,
 	SDMA_QNUM_OVERFLOW	= -11,
+	SDMA_CQE_ERROR		= -12,
 
 	SDMA_INVALID_OPCODE	= -100001,
 	SDMA_ECC_ERR		= -100002,
