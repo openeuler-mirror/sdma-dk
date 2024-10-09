@@ -199,9 +199,9 @@ int sdma_free_chn(void *phandle);
  功能描述  : 查询sdma通道剩余可用的sqe数目
  输入参数  : phandle--sdma句柄
  输出参数  : 无
- 返 回 值  : sdma通道剩余可用的sqe数目
+ 返 回 值  : sdma通道剩余可用的sqe数目或小于0错误码
 ****************************************************************************/
-uint32_t sdma_query_sqe_num(void *phandle);
+int sdma_query_sqe_num(void *phandle);
 
 /*****************************************************************************
  函 数 名  : sdma_query_chn
@@ -213,7 +213,7 @@ uint32_t sdma_query_sqe_num(void *phandle);
 int sdma_query_chn(void *phandle, uint32_t count);
 
 /*****************************************************************************
- 函 数 名  : sdma_query_chn
+ 函 数 名  : sdma_iquery_chn
  功能描述  : 查询sdma通道是否已完成count个sqe任务
  输入参数  : phandle--sdma句柄
 	    request--sdma发送命令相关信息指针
@@ -227,7 +227,7 @@ int sdma_iquery_chn(void *phandle, sdma_request_t *request);
  功能描述  : 查询sdma设备数量
  输入参数  : fd--sdma文件句柄
  输出参数  : 无
- 返 回 值  : sdma设备数量
+ 返 回 值  : sdma设备数量或小于0错误码
 ****************************************************************************/
 int sdma_devices_num(int fd);
 
@@ -236,7 +236,7 @@ int sdma_devices_num(int fd);
  功能描述  : 查询当前进程就近的sdma设备Id
  输入参数  : 无
  输出参数  : 无
- 返 回 值  : -1--未找到 其他--sdma设备id
+ 返 回 值  : sdma设备id或小于0错误码
 ****************************************************************************/
 int sdma_nearest_id(void);
 
@@ -246,7 +246,7 @@ int sdma_nearest_id(void);
  输入参数  : phandle--sdma句柄
 	    clr--计数器清零标识 1有效
  输出参数  : 无
- 返 回 值  : SDMA_NULL_POINTER--失败 其他--完成sqe数量
+ 返 回 值  : 完成sqe数量或小于0错误码
 ****************************************************************************/
 int sdma_finish_sqe_cnt(void *phandle, bool clr);
 
@@ -256,7 +256,7 @@ int sdma_finish_sqe_cnt(void *phandle, bool clr);
  输入参数  : phandle--sdma句柄
 	    clr--计数器清零标识 1有效
  输出参数  : 无
- 返 回 值  : SDMA_NULL_POINTER--失败 其他--完成sqe数量
+ 返 回 值  : 错误sqe数量或小于0错误码
 ****************************************************************************/
 int sdma_err_sqe_cnt(void *phandle, bool clr);
 

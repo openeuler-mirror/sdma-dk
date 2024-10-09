@@ -13,7 +13,6 @@
 #include <unistd.h>
 #include <sched.h>
 #include <fcntl.h>
-#include <pthread.h>
 #include <errno.h>
 
 #include "hisi_sdma.h"
@@ -336,20 +335,12 @@ static uint32_t sdma_task_num(uint32_t head, uint32_t tail)
 	return (tail + HISI_SDMA_SQ_LEN - head) & (HISI_SDMA_SQ_LEN - 1);
 }
 
-static int sdma_lock_chn(volatile int *lock, uint32_t *lock_pid)
+static void sdma_lock_chn(volatile int *lock, uint32_t *lock_pid)
 {
-	int i = 0;
-
-	while (__sync_bool_compare_and_swap(lock, 0, 1) != 1) {
+	while (__sync_bool_compare_and_swap(lock, 0, 1) != 1)
 		sched_yield();
-		i++;
-		if (i > HISI_SDMA_LOCK_TIMEOUT_TIMES) {
-			return SDMA_LOCK_TIMEOUT;
-		}
-	}
-	*lock_pid = (uint32_t)getpid();
 
-	return SDMA_SUCCESS;
+	*lock_pid = (uint32_t)getpid();
 }
 
 static void sdma_unlock_chn(volatile int *lock, uint32_t *lock_pid)
@@ -704,11 +695,7 @@ int sdma_iwait_chn(void *phandle, sdma_request_t *request)
 		return SDMA_SUCCESS;
 	}
 
-	ret = sdma_lock_chn(&pchan->sync_info->lock, &pchan->sync_info->lock_pid);
-	if (ret != 0) {
-		return ret;
-	}
-
+	sdma_lock_chn(&pchan->sync_info->lock, &pchan->sync_info->lock_pid);
 	num = sdma_task_num(pchan->sync_info->sq_head, pchan->sync_info->sq_tail);
 	if (num > 0) {
 		ret = sdma_task_check(pchan, num);
@@ -745,11 +732,7 @@ int sdma_iquery_chn(void *phandle, sdma_request_t *request)
 
 	pchan = (sdma_handle_t *)phandle;
 
-	ret = sdma_lock_chn(&pchan->sync_info->lock, &pchan->sync_info->lock_pid);
-	if (ret != 0) {
-		return ret;
-	}
-
+	sdma_lock_chn(&pchan->sync_info->lock, &pchan->sync_info->lock_pid);
 	ret = pchan->funcs[SDMA_CQ_TAIL_READ].reg_func(pchan, &hardware_cq_tail);
 	if (ret != 0) {
 		sdma_unlock_chn(&pchan->sync_info->lock, &pchan->sync_info->lock_pid);
@@ -1413,11 +1396,7 @@ int sdma_icopy_data(void *phandle, sdma_sqe_task_t *sdma_sqe, uint32_t count,
 	}
 
 	pchan = (sdma_handle_t *)phandle;
-	ret = sdma_lock_chn(&pchan->sync_info->lock, &pchan->sync_info->lock_pid);
-	if (ret != 0) {
-		SDMA_ERR("sdma lock chn failed!\n");
-		return ret;
-	}
+	sdma_lock_chn(&pchan->sync_info->lock, &pchan->sync_info->lock_pid);
 	sq_tail = pchan->sync_info->sq_tail;
 	req_id = pchan->sync_info->sq_tail;
 	request->req_id = req_id;
@@ -1509,7 +1488,7 @@ int sdma_deinit_chn(void *phandle)
 	return SDMA_SUCCESS;
 }
 
-uint32_t sdma_query_sqe_num(void *phandle)
+int sdma_query_sqe_num(void *phandle)
 {
 	sdma_handle_t *pchan = NULL;
 	uint32_t tail;
@@ -1531,7 +1510,7 @@ uint32_t sdma_query_sqe_num(void *phandle)
 		num = head - tail - 1;
 	}
 
-	return num;
+	return (int)num;
 }
 
 int sdma_devices_num(int fd)
