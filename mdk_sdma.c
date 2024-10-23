@@ -318,7 +318,9 @@ static int sdma_cqe_check(sdma_handle_t *pchan, uint16_t sq_id, uint16_t cq_tail
 		ret = cqe_err_code(cq_entry->status);
 		pchan->sync_info->cqe_err[cq_tail] = ret;
 		__sync_fetch_and_add(&pchan->sync_info->err_cnt, 1);
-	}
+	} else {
+			pchan->sync_info->cqe_err[cq_tail] = 0;
+		}
 	if (sq_id != cq_entry->sqe_id) {
 		SDMA_ERR("sqe_id error, cq_head = %hu, sqe_id = %u\n", sq_id, cq_entry->sqe_id);
 		ret = SDMA_CQE_ID_WRONG;
@@ -525,6 +527,8 @@ static int update_round_cnt(sdma_handle_t *pchan, uint32_t hardware_cq_tail)
 			SDMA_ERR("cq_entry invalid, status: %u\n", cq_entry->status);
 			pchan->sync_info->cqe_err[cq_head] = cqe_err_code(cq_entry->status);
 			__sync_fetch_and_add(&pchan->sync_info->err_cnt, 1);
+		} else {
+			pchan->sync_info->cqe_err[cq_head] = 0;
 		}
 
 		pchan->sync_info->round_cnt[cq_head]++;
@@ -557,6 +561,8 @@ static int sdma_query_cqe_check(sdma_handle_t *pchan, uint32_t hardware_cq_tail)
 			SDMA_ERR("cq_entry invalid, status: %u\n", cq_entry->status);
 			pchan->sync_info->cqe_err[cq_head] = cqe_err_code(cq_entry->status);
 			cqe_wrong = true;
+		} else {
+			pchan->sync_info->cqe_err[cq_head] = 0;
 		}
 		cq_head = (cq_head + 1) & (HISI_SDMA_CQ_LEN - 1);
 	}
