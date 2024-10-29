@@ -348,6 +348,7 @@ static void sdma_lock_chn(volatile int *lock, uint32_t *lock_pid)
 static void sdma_unlock_chn(volatile int *lock, uint32_t *lock_pid)
 {
 	*lock_pid = 0;
+	SDMA_WMB();
 	*lock = 0;
 }
 
