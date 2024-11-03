@@ -534,6 +534,9 @@ static int update_round_cnt(sdma_handle_t *pchan, uint32_t hardware_cq_tail)
 
 		pchan->sync_info->round_cnt[cq_head]++;
 		cq_head = (cq_head + 1) & (HISI_SDMA_CQ_LEN - 1);
+		if (cq_head == 0) {
+			pchan->sync_info->cq_vld ^= 1;
+		}
 	}
 
 	ret = pchan->funcs[SDMA_CQ_HEAD_WRITE].reg_func(pchan, &hardware_cq_tail);
