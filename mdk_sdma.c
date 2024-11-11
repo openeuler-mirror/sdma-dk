@@ -27,7 +27,7 @@
 #define SDMA_SEND_TASK_TIMES 2
 
 #define SDMA_ERR(fmt, args...) \
-	printf("SDMA ERROR (%s|%u): " fmt, __FUNCTION__, __LINE__, ##args)
+	printf("SDMA ERROR (%s|%u): [%s] " fmt, __FUNCTION__, __LINE__, sdma_get_host(), ##args)
 
 #ifdef USRTEST
 #define SDMA_DBG(fmt, args...) \
@@ -60,6 +60,18 @@ struct sdma_mode_funcs {
 
 static bool g_sdma_mode = HISI_SDMA_SAFE_MODE;
 static size_t g_page_size = 0;
+
+static const char *sdma_get_host(void)
+{
+	const char *hostname = NULL;
+
+	hostname = getenv("HOSTNAME");
+	if (hostname == NULL) {
+		hostname = "Invalid hostname";
+	}
+
+	return hostname;
+}
 
 static void sdma_channel_set_val_mask_shift(const sdma_handle_t *pchan, int reg, uint32_t val,
 					    uint32_t mask, uint32_t shift)
@@ -314,7 +326,7 @@ static int sdma_cqe_check(sdma_handle_t *pchan, uint16_t sq_id, uint16_t cq_tail
 
 	cq_entry = pchan->cqe + cq_tail;
 	if (cq_entry->status != 0) {
-		SDMA_ERR("cq_entry invalid, status: %u\n", cq_entry->status);
+		SDMA_ERR("Cq_entry invalid, status: %u\n", cq_entry->status);
 		ret = cqe_err_code(cq_entry->status);
 		pchan->sync_info->cqe_err[cq_tail] = ret;
 		__sync_fetch_and_add(&pchan->sync_info->err_cnt, 1);
@@ -322,7 +334,7 @@ static int sdma_cqe_check(sdma_handle_t *pchan, uint16_t sq_id, uint16_t cq_tail
 			pchan->sync_info->cqe_err[cq_tail] = 0;
 		}
 	if (sq_id != cq_entry->sqe_id) {
-		SDMA_ERR("sqe_id error, cq_head = %hu, sqe_id = %u\n", sq_id, cq_entry->sqe_id);
+		SDMA_ERR("Sqe_id error, cq_head = %hu, sqe_id = %u\n", sq_id, cq_entry->sqe_id);
 		ret = SDMA_CQE_ID_WRONG;
 		pchan->sync_info->cqe_err[cq_tail] = ret;
 		__sync_fetch_and_add(&pchan->sync_info->err_cnt, 1);
@@ -359,7 +371,7 @@ static int update_hw_sw_ptr(sdma_handle_t *pchan, uint32_t sq_head, uint32_t cq_
 	/* Updata HW CQ HEAD */
 	ret = pchan->funcs[SDMA_CQ_HEAD_WRITE].reg_func(pchan, &cq_tail);
 	if (ret != 0) {
-		SDMA_ERR("write cq_head failed, ret = %d\n", ret);
+		SDMA_ERR("Write cq_head failed, ret = %d\n", ret);
 		return SDMA_FAILED;
 	}
 	pchan->sync_info->sq_head = sq_head;
@@ -378,26 +390,28 @@ static int sdma_task_timeout_handle(sdma_handle_t *pchan, uint32_t sq_head, uint
 
 	ret = pchan->funcs[SDMA_SQ_TAIL_READ].reg_func(pchan, &hardware_sq_tail);
 	if (ret != 0) {
-		SDMA_ERR("read sq_tail value failed, ret = %d\n", ret);
+		SDMA_ERR("Read sq_tail value failed, ret = %d\n", ret);
 		return SDMA_FAILED;
 	}
 	if (hardware_sq_tail >= HISI_SDMA_SQ_LEN) {
-		SDMA_ERR("sq_tail value invalid, sq_tail = %u\n", hardware_sq_tail);
+		SDMA_ERR("Sq_tail value invalid, sq_tail = %u\n", hardware_sq_tail);
 		return SDMA_FAILED;
 	}
 	if (pchan->sync_info->sq_tail != (uint16_t)hardware_sq_tail) {
+		SDMA_ERR("Sq_tail not equal, invalid doorbell!\n");
 		return SDMA_INVALID_DOORBELL;
 	}
 	ret = pchan->funcs[SDMA_SQ_HEAD_READ].reg_func(pchan, &hardware_sq_head);
 	if (ret != 0) {
-		SDMA_ERR("read sq_head value failed, ret = %d\n", ret);
+		SDMA_ERR("Read sq_head value failed, ret = %d\n", ret);
 		return SDMA_FAILED;
 	}
 	if (hardware_sq_head >= HISI_SDMA_SQ_LEN) {
-		SDMA_ERR("sq_head value invalid, sq_head = %u\n", hardware_sq_head);
+		SDMA_ERR("Sq_head value invalid, sq_head = %u\n", hardware_sq_head);
 		return SDMA_FAILED;
 	}
 	if (pchan->sync_info->sq_tail == (uint16_t)hardware_sq_head) {
+		SDMA_ERR("Still have cqe not recycled!\n");
 		return SDMA_CQE_MEM_RSVD;
 	}
 	SDMA_ERR("Timeout CQEs id = %u, there are still %u task left!\n", cq_tail, left_num);
@@ -464,13 +478,13 @@ int sdma_check_handle(void *phandle)
 	sdma_handle_t *pchan;
 
 	if (!phandle) {
-		SDMA_ERR("sdma channel handle is NULL!\n");
+		SDMA_ERR("Sdma channel handle is NULL!\n");
 		return SDMA_NULL_POINTER;
 	}
 
 	pchan = (sdma_handle_t *)phandle;
 	if (!pchan->cqe || !pchan->sync_info || !pchan->funcs) {
-		SDMA_ERR("sdma handle content invalid!\n");
+		SDMA_ERR("Sdma handle content invalid!\n");
 		return SDMA_NULL_POINTER;
 	}
 
@@ -478,7 +492,7 @@ int sdma_check_handle(void *phandle)
 	    pchan->sync_info->sq_tail >= HISI_SDMA_SQ_LEN ||
 	    pchan->sync_info->cq_head >= HISI_SDMA_CQ_LEN ||
 	    pchan->sync_info->cq_tail >= HISI_SDMA_CQ_LEN) {
-		SDMA_ERR("sdma sq/cq register info invalid!\n");
+		SDMA_ERR("Sdma sq/cq register info invalid!\n");
 		return SDMA_QNUM_OVERFLOW;
 	}
 
@@ -506,6 +520,7 @@ int sdma_wait_chn(void *phandle, uint32_t count)
 	pchan = (sdma_handle_t *)phandle;
 	num = sdma_task_num(pchan->sync_info->sq_head, pchan->sync_info->sq_tail);
 	if (num < count) {
+		SDMA_ERR("Sdma_wait_chn overflow!\n");
 		return SDMA_WAIT_NUM_OVERFLOW;
 	}
 
