@@ -18,7 +18,7 @@ extern "C" {
 #define SDMA_READ(reg) (*(uint32_t *)(reg))
 #define SDMA_WRITE(val, reg) (*(uint32_t *)(reg) = (uint32_t)(val))
 
-#define HISI_SDMA_LOCK_TIMEOUT_US 1000000
+#define HISI_SDMA_LOCK_TIMEOUT_TIMES 1000000
 
 typedef void (*sdma_task_callback)(int task_status, void *task_data);
 
@@ -75,6 +75,7 @@ typedef enum {
 	SDMA_INVALID_DOORBELL	= -9,
 	SDMA_CQE_MEM_RSVD	= -10,
 	SDMA_QNUM_OVERFLOW	= -11,
+	SDMA_CQE_ERROR		= -12,
 
 	SDMA_INVALID_OPCODE	= -100001,
 	SDMA_ECC_ERR		= -100002,
@@ -127,8 +128,8 @@ int sdma_deinit_chn(void *phandle);
  函 数 名  : sdma_copy_data
  功能描述  : sdma拷贝数据
  输入参数  : phandle--sdma句柄
-			sdma_sqe--sqe数据指针
-			count--sqe的数量
+	    sdma_sqe--sqe数据指针
+	    count--sqe的数量
  输出参数  : 无
  返 回 值  : 0--成功 其他--错误码
 ****************************************************************************/
@@ -138,8 +139,8 @@ int sdma_copy_data(void *phandle, sdma_sqe_task_t *sdma_sqe, uint32_t count);
  函 数 名  : sdma_icopy_data
  功能描述  : sdma拷贝数据
  输入参数  : phandle--sdma句柄
-			sdma_sqe--sqe数据指针
-			count--sqe的数量
+	    sdma_sqe--sqe数据指针
+	    count--sqe的数量
  输出参数  : request--sdma发送命令相关信息指针
  返 回 值  : 0--成功 其他--错误码
 ****************************************************************************/
@@ -150,7 +151,7 @@ int sdma_icopy_data(void *phandle, sdma_sqe_task_t *sdma_sqe,
  函 数 名  : sdma_wait_chn
  功能描述  : 等待sdma通道发送完成
  输入参数  : phandle--sdma句柄
-			count--接收的cqe数量
+	    count--接收的cqe数量
  输出参数  : 无
  返 回 值  : 0--成功 其他--错误码
 ****************************************************************************/
@@ -160,7 +161,7 @@ int sdma_wait_chn(void *phandle, uint32_t count);
  函 数 名  : sdma_iwait_chn
  功能描述  : 等待sdma通道发送完成
  输入参数  : phandle--sdma句柄
-			request--sdma发送命令相关信息指针
+	    request--sdma发送命令相关信息指针
  输出参数  : 无
  返 回 值  : 0--成功 其他--错误码
 ****************************************************************************/
@@ -198,9 +199,9 @@ int sdma_free_chn(void *phandle);
  功能描述  : 查询sdma通道剩余可用的sqe数目
  输入参数  : phandle--sdma句柄
  输出参数  : 无
- 返 回 值  : sdma通道剩余可用的sqe数目
+ 返 回 值  : sdma通道剩余可用的sqe数目或小于0错误码
 ****************************************************************************/
-uint32_t sdma_query_sqe_num(void *phandle);
+int sdma_query_sqe_num(void *phandle);
 
 /*****************************************************************************
  函 数 名  : sdma_query_chn
@@ -212,10 +213,10 @@ uint32_t sdma_query_sqe_num(void *phandle);
 int sdma_query_chn(void *phandle, uint32_t count);
 
 /*****************************************************************************
- 函 数 名  : sdma_query_chn
+ 函 数 名  : sdma_iquery_chn
  功能描述  : 查询sdma通道是否已完成count个sqe任务
  输入参数  : phandle--sdma句柄
-			request--sdma发送命令相关信息指针
+	    request--sdma发送命令相关信息指针
  输出参数  : 无
  返 回 值  : 0--成功 其他--错误码
 ****************************************************************************/
@@ -226,7 +227,7 @@ int sdma_iquery_chn(void *phandle, sdma_request_t *request);
  功能描述  : 查询sdma设备数量
  输入参数  : fd--sdma文件句柄
  输出参数  : 无
- 返 回 值  : sdma设备数量
+ 返 回 值  : sdma设备数量或小于0错误码
 ****************************************************************************/
 int sdma_devices_num(int fd);
 
@@ -235,7 +236,7 @@ int sdma_devices_num(int fd);
  功能描述  : 查询当前进程就近的sdma设备Id
  输入参数  : 无
  输出参数  : 无
- 返 回 值  : -1--未找到 其他--sdma设备id
+ 返 回 值  : sdma设备id或小于0错误码
 ****************************************************************************/
 int sdma_nearest_id(void);
 
@@ -243,9 +244,9 @@ int sdma_nearest_id(void);
  函 数 名  : sdma_finish_sqe_cnt
  功能描述  : 查询/清除sdma完成sqe计数器
  输入参数  : phandle--sdma句柄
-			clr--计数器清零标识 1有效
+	    clr--计数器清零标识 1有效
  输出参数  : 无
- 返 回 值  : SDMA_NULL_POINTER--失败 其他--完成sqe数量
+ 返 回 值  : 完成sqe数量或小于0错误码
 ****************************************************************************/
 int sdma_finish_sqe_cnt(void *phandle, bool clr);
 
@@ -253,9 +254,9 @@ int sdma_finish_sqe_cnt(void *phandle, bool clr);
  函 数 名  : sdma_err_sqe_cnt
  功能描述  : 查询/清除sdma异常sqe计数器
  输入参数  : phandle--sdma句柄
-			clr--计数器清零标识 1有效
+	    clr--计数器清零标识 1有效
  输出参数  : 无
- 返 回 值  : SDMA_NULL_POINTER--失败 其他--完成sqe数量
+ 返 回 值  : 错误sqe数量或小于0错误码
 ****************************************************************************/
 int sdma_err_sqe_cnt(void *phandle, bool clr);
 

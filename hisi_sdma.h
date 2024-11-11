@@ -13,7 +13,7 @@
 #include <pthread.h>
 #include "mdk_sdma.h"
 
-/*
+/* 
  * CQE TIMEOUT period = 10ns * 1000000000 = 10s
  */
 #define HISI_SDMA_CQE_TIMEOUT		1000000000
