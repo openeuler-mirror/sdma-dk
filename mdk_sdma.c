@@ -25,6 +25,7 @@
 #define SDMA_CQ_SIZE 0x100
 #define SDMA_SYNC_INFO_SIZE 0x100
 #define SDMA_SEND_TASK_TIMES 2
+#define HOSTNAME_LEN 65
 
 #define SDMA_ERR(fmt, args...) \
 	printf("SDMA ERROR (%s|%u): [%s] " fmt, __FUNCTION__, __LINE__, sdma_get_host(), ##args)
@@ -58,17 +59,13 @@ struct sdma_mode_funcs {
 	sdma_reg_func reg_func;
 };
 
+static char hostname[HOSTNAME_LEN] = {"Invalid hostname"};
 static bool g_sdma_mode = HISI_SDMA_SAFE_MODE;
 static size_t g_page_size = 0;
 
 static const char *sdma_get_host(void)
 {
-	const char *hostname = NULL;
-
-	hostname = getenv("HOSTNAME");
-	if (hostname == NULL) {
-		hostname = "Invalid hostname";
-	}
+	gethostname(hostname, HOSTNAME_LEN);
 
 	return hostname;
 }
@@ -331,8 +328,8 @@ static int sdma_cqe_check(sdma_handle_t *pchan, uint16_t sq_id, uint16_t cq_tail
 		pchan->sync_info->cqe_err[cq_tail] = ret;
 		__sync_fetch_and_add(&pchan->sync_info->err_cnt, 1);
 	} else {
-			pchan->sync_info->cqe_err[cq_tail] = 0;
-		}
+		pchan->sync_info->cqe_err[cq_tail] = 0;
+	}
 	if (sq_id != cq_entry->sqe_id) {
 		SDMA_ERR("Sqe_id error, cq_head = %hu, sqe_id = %u\n", sq_id, cq_entry->sqe_id);
 		ret = SDMA_CQE_ID_WRONG;
@@ -584,6 +581,9 @@ static int sdma_query_cqe_check(sdma_handle_t *pchan, uint32_t hardware_cq_tail)
 			pchan->sync_info->cqe_err[cq_head] = 0;
 		}
 		cq_head = (cq_head + 1) & (HISI_SDMA_CQ_LEN - 1);
+		if (cq_head == 0) {
+			pchan->sync_info->cq_vld ^= 1;
+		}
 	}
 	ret = pchan->funcs[SDMA_CQ_HEAD_WRITE].reg_func(pchan, &hardware_cq_tail);
 	if (ret != 0) {
@@ -632,6 +632,7 @@ int sdma_query_chn(void *phandle, uint32_t count)
 	if (finish_count < count) {
 		return SDMA_TASK_UNFINISH;
 	}
+	hardware_cq_tail = (head_before + count) & (HISI_SDMA_CQ_LEN - 1);
 
 	return sdma_query_cqe_check(pchan, hardware_cq_tail);
 }
@@ -1055,7 +1056,8 @@ err_unmap:
 err_free:
 	free(pchan);
 err_put:
-	if(!ioctl(fd, IOCTL_SDMA_PUT_CHN, &chn)) {
+	ret = ioctl(fd, IOCTL_SDMA_PUT_CHN, &chn);
+	if (ret != 0) {
 		SDMA_ERR("IOCTL_SDMA_PUT_CHN fail,%s!\n", strerror(errno));
 	}
 err_out:
